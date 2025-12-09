@@ -4,7 +4,7 @@
 
 A comprehensive Python-based algorithmic trading backtesting system designed for Indian stock markets (NSE). This project implements industry-standard practices for data acquisition, validation, caching, and backtesting using event-driven architecture.
 
-**Developer:** Shreyansh1812  
+**Developer:** Shreyansh Patel
 **Language:** Python 3.10+  
 **Primary Market:** Indian Stock Market (NSE)
 
