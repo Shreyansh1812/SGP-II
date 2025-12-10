@@ -1,3 +1,4 @@
+# Project-specific files
 Documentation.pdf
 imp.txt
 test_results.txt
@@ -5,3 +6,59 @@ test_plotting_results.txt
 
 # Environment variables (contains sensitive configuration)
 .env
+.env.local
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data directories (raw/processed stock data)
+data/raw/*.csv
+data/processed/*.csv
+data/test_indicators/*.csv
+
+# Model artifacts
+models/*.pkl
+models/*.h5
+models/*.pt
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
