@@ -1,2 +1,7 @@
 Documentation.pdf
 imp.txt
+test_results.txt
+test_plotting_results.txt
+
+# Environment variables (contains sensitive configuration)
+.env

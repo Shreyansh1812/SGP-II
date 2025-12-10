@@ -89,9 +89,17 @@ def run_backtest(
         - Signal = 0 (HOLD): Maintain current position
     
     Order Execution:
-        - Uses closing price of signal day (simplification)
-        - Industry standard: next-day open (requires 1-day shift)
-        - Optional: commission and slippage can be added
+        ⚠️ IMPORTANT SIMPLIFICATION:
+        - Current implementation: Executes at CLOSING PRICE of signal day
+        - Real-world trading: Execution happens NEXT DAY at opening price
+        - Why this matters: In real trading, you cannot act on today's close
+          until tomorrow's market opens. This creates a 1-day execution lag.
+        - Impact: Backtest results may be slightly optimistic compared to
+          live trading due to this forward-looking bias.
+        - Recommendation: For more realistic results, consider implementing
+          next-day execution logic (shift prices by 1 trading day).
+        - Optional enhancements: Commission and slippage can be added for
+          further realism (currently only commission is supported).
     
     Capital Allocation:
         - 100% of available capital invested when entering position
@@ -223,8 +231,17 @@ def run_backtest(
     
     Notes
     -----
-    1. **Execution Price:** Uses closing price of signal day. More realistic 
-       approach would be next-day open (requires 1-day signal shift).
+    1. **⚠️ Execution Price Simplification:**
+       - **Current Implementation:** Executes trades at closing price of signal day
+       - **Real-World Trading:** Execution happens next trading day at open price
+       - **Why This Matters:** You cannot act on today's close until tomorrow's open
+       - **Impact:** Backtest results may be 1-2% more optimistic than live trading
+       - **Recommendation:** For production use, implement 1-day execution lag
+       - **How to Fix:** Shift execution prices by 1 trading day forward
+       
+       Example:
+       - Signal generated on Monday close → Execute at Tuesday open (realistic)
+       - Current implementation: Signal Monday → Execute Monday close (unrealistic)
     
     2. **Position Sizing:** Invests 100% of available capital per trade.
        Fractional shares are not supported (uses floor division).
@@ -232,8 +249,9 @@ def run_backtest(
     3. **Long-Only:** Currently only supports long positions. Short selling
        can be added in future versions.
     
-    4. **Transaction Costs:** Commission and slippage parameters are included
-       but not yet implemented. Default is zero transaction costs.
+    4. **Transaction Costs:** Commission parameter is implemented (default 0.1%).
+       Slippage parameter exists but not yet applied. Can be enhanced for
+       more realistic modeling of execution costs.
     
     5. **Edge Cases Handled:**
        - No trades executed: Returns 0% return, no trade statistics
