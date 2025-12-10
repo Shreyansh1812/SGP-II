@@ -20,7 +20,7 @@ import logging
 from typing import Optional
 
 # Import technical indicators from indicators module
-from indicators import calculate_sma, calculate_rsi, calculate_ema
+from src.indicators import calculate_sma, calculate_rsi, calculate_ema
 
 # Configure logging
 logging.basicConfig(

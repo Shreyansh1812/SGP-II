@@ -106,8 +106,8 @@ def get_env_float(key: str, default: float) -> float:
 
 # ==================== TRADING CONFIGURATION ====================
 
-# Stock Ticker Symbol (NSE format: SYMBOL.NS)
-TICKER = get_env("TICKER", default="RELIANCE.NS")
+# Stock Ticker Symbol (default: AAPL for reliability, use SYMBOL.NS for NSE)
+TICKER = get_env("TICKER", default="AAPL")
 
 # Backtest Date Range
 START_DATE = get_env("START_DATE", default="2020-01-01")

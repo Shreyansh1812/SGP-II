@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
     """
-    Fetch historical stock data from Yahoo Finance.
+    Fetch historical stock data from Yahoo Finance with retry logic.
     
     Args:
         ticker (str): Stock ticker symbol (e.g., 'RELIANCE.NS' for NSE stocks)
@@ -31,7 +31,7 @@ def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> Optional[pd
     
     Returns:
         pd.DataFrame: Historical OHLCV data with columns [Open, High, Low, Close, Adj Close, Volume]
-        None: If download fails
+        None: If download fails after retries
     
     Raises:
         Exception: If API call fails or network error occurs
@@ -40,28 +40,48 @@ def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> Optional[pd
         >>> df = fetch_stock_data("RELIANCE.NS", "2020-01-01", "2024-01-01")
         >>> print(df.head())
     """
-    try:
-        logging.info(f"Fetching data for {ticker} from {start_date} to {end_date}")
-        
-        # Download data using yfinance
-        data = yf.download(
-            ticker,
-            start=start_date,
-            end=end_date,
-            progress=False  # Suppress progress bar for cleaner logs
-        )
-        
-        # Check if data was successfully retrieved
-        if data.empty:
-            logging.warning(f"No data retrieved for {ticker}. Check ticker symbol or date range.")
-            return None
-        
-        logging.info(f"Successfully fetched {len(data)} rows of data for {ticker}")
-        return data
+    import time
     
-    except Exception as e:
-        logging.error(f"Error fetching data for {ticker}: {str(e)}")
-        return None
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"Fetching data for {ticker} from {start_date} to {end_date} (attempt {attempt + 1}/{max_retries})")
+            
+            # Create Ticker object for better API handling
+            stock = yf.Ticker(ticker)
+            
+            # Download data using Ticker.history() method (more reliable)
+            data = stock.history(
+                start=start_date,
+                end=end_date,
+                auto_adjust=False,  # Keep Adj Close separate
+                actions=False       # Don't include dividends/splits
+            )
+            
+            # Check if data was successfully retrieved
+            if data.empty:
+                if attempt < max_retries - 1:
+                    logging.warning(f"No data retrieved for {ticker} (attempt {attempt + 1}). Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logging.warning(f"No data retrieved for {ticker} after {max_retries} attempts. Check ticker symbol or date range.")
+                    return None
+            
+            logging.info(f"✓ Successfully fetched {len(data)} rows of data for {ticker}")
+            return data
+        
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logging.warning(f"Error fetching data for {ticker} (attempt {attempt + 1}): {str(e)}. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                logging.error(f"Failed to fetch data for {ticker} after {max_retries} attempts: {str(e)}")
+                return None
+    
+    return None
 
 
 def validate_data(df: pd.DataFrame, ticker: str, min_rows: int = 10) -> bool:
