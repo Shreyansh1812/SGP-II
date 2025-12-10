@@ -7,8 +7,8 @@ where 1 = BUY, -1 = SELL, and 0 = HOLD.
 
 Strategies Implemented:
     1. Golden Cross Strategy - SMA crossover signals
-    2. RSI Mean Reversion Strategy (TODO)
-    3. MACD Trend Following Strategy (TODO)
+    2. RSI Mean Reversion Strategy - Threshold crossing signals
+    3. MACD Trend Following Strategy - MACD/Signal line crossover
 
 Author: Shreyansh Patel
 Date: December 10, 2025
@@ -20,7 +20,7 @@ import logging
 from typing import Optional
 
 # Import technical indicators from indicators module
-from indicators import calculate_sma, calculate_rsi
+from indicators import calculate_sma, calculate_rsi, calculate_ema
 
 # Configure logging
 logging.basicConfig(
@@ -650,5 +650,384 @@ def rsi_mean_reversion_strategy(
             status = f"NORMAL (RSI={current_rsi:.2f}, range {oversold_threshold}-{overbought_threshold})"
         
         logging.info(f"  - Current RSI status: {status}")
+    
+    return signals
+
+
+# =============================================================================
+# STRATEGY 3: MACD TREND FOLLOWING STRATEGY
+# =============================================================================
+
+def macd_trend_following_strategy(
+    data: pd.DataFrame,
+    column: str = 'Close',
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+    zero_line_filter: bool = False
+) -> pd.Series:
+    """
+    Generate trading signals based on MACD (Moving Average Convergence Divergence) crossovers.
+    
+    MACD is a trend-following momentum indicator that shows the relationship between two 
+    exponential moving averages (EMAs). It consists of three components:
+    
+    1. MACD Line = EMA(fast) - EMA(slow)
+    2. Signal Line = EMA(MACD Line, signal_period)
+    3. MACD Histogram = MACD Line - Signal Line
+    
+    **Trading Logic:**
+    - **BUY Signal (1):**  MACD Line crosses ABOVE Signal Line (bullish crossover)
+    - **SELL Signal (-1):** MACD Line crosses BELOW Signal Line (bearish crossover)
+    - **HOLD Signal (0):**  No crossover detected
+    
+    **Zero-Line Filter (Optional):**
+    When enabled, only generates signals that align with overall trend:
+    - BUY only when MACD > 0 (bullish territory)
+    - SELL only when MACD < 0 (bearish territory)
+    
+    **Mathematical Formula:**
+    ```
+    EMA_fast = EMA(Close, fast_period)       # Default: 12
+    EMA_slow = EMA(Close, slow_period)       # Default: 26
+    MACD_line = EMA_fast - EMA_slow
+    Signal_line = EMA(MACD_line, signal_period)  # Default: 9
+    
+    # Detect crossovers using previous day comparison
+    MACD_prev = MACD_line.shift(1)
+    Signal_prev = Signal_line.shift(1)
+    
+    Bullish_cross = (MACD_prev <= Signal_prev) & (MACD_line > Signal_line)
+    Bearish_cross = (MACD_prev >= Signal_prev) & (MACD_line < Signal_line)
+    ```
+    
+    **Real-World Example:**
+    
+    Stock: RELIANCE.NS (June 2023)
+    
+    | Date   | Close   | MACD  | Signal | Crossover | Action |
+    |--------|---------|-------|--------|-----------|--------|
+    | Jun 5  | ₹1155   | +2.5  | +3.0   | -         | HOLD   |
+    | Jun 8  | ₹1148   | +1.8  | +2.2   | -         | HOLD   |
+    | Jun 12 | ₹1140   | +0.5  | +1.5   | -         | HOLD   |
+    | Jun 15 | ₹1135   | -0.2  | +0.8   | Bearish   | SELL   |
+    | Jun 20 | ₹1128   | -1.5  | +0.2   | -         | HOLD   |
+    
+    On June 15, MACD crossed below Signal line → SELL signal generated
+    
+    **Use Cases:**
+    - **Medium to long-term trading:** Best for swing trading (days to weeks)
+    - **Trending markets:** Works well in clear uptrends or downtrends
+    - **Momentum confirmation:** Combines trend direction with momentum strength
+    - **Divergence detection:** Can identify potential trend reversals
+    
+    **Advantages:**
+    - Combines trend and momentum analysis
+    - Widely used by institutional traders
+    - Flexible with zero-line filter option
+    - Works well in trending markets
+    
+    **Limitations:**
+    - Lagging indicator (uses EMAs, not real-time)
+    - Generates whipsaws in sideways/choppy markets
+    - Requires sufficient historical data (at least slow_period + signal_period)
+    - False signals in ranging markets
+    
+    **Parameter Guidelines:**
+    - **fast_period (12):** Faster response to price changes, more signals
+      * Conservative: 15-20 (slower, fewer signals)
+      * Aggressive: 8-10 (faster, more signals)
+    
+    - **slow_period (26):** Defines overall trend sensitivity
+      * Conservative: 30-40 (smoother, less noise)
+      * Aggressive: 20-24 (more responsive)
+    
+    - **signal_period (9):** Smoothing for MACD line
+      * Conservative: 12-15 (smoother signals)
+      * Aggressive: 6-8 (faster signals)
+    
+    - **zero_line_filter (False):** Filter signals by MACD position
+      * True: Only trade with the trend (fewer signals, higher quality)
+      * False: Trade all crossovers (more signals, more risk)
+    
+    **Strategy Variations:**
+    1. **Standard MACD (12/26/9):** Classic parameters, balanced approach
+    2. **Fast MACD (8/17/9):** More responsive, day trading
+    3. **Slow MACD (19/39/9):** Conservative, swing trading
+    
+    Parameters:
+    -----------
+    data : pd.DataFrame
+        DataFrame containing OHLCV price data with DatetimeIndex.
+        Must have at least (slow_period + signal_period) rows.
+    
+    column : str, default='Close'
+        Name of the price column to use for MACD calculation.
+        Common choices: 'Close', 'Adj Close'
+    
+    fast_period : int, default=12
+        Period for fast EMA calculation. Must be >= 2 and < slow_period.
+        Typical range: 8-15 days
+    
+    slow_period : int, default=26
+        Period for slow EMA calculation. Must be >= 2 and > fast_period.
+        Must be <= len(data) for sufficient data.
+        Typical range: 20-40 days
+    
+    signal_period : int, default=9
+        Period for signal line EMA (smoothing MACD). Must be >= 2.
+        Typical range: 6-15 days
+    
+    zero_line_filter : bool, default=False
+        If True, only generate BUY when MACD > 0, SELL when MACD < 0.
+        Reduces false signals but may miss some opportunities.
+    
+    Returns:
+    --------
+    pd.Series
+        Signal series with same index as input data:
+        - 1: BUY signal (bullish MACD crossover)
+        - -1: SELL signal (bearish MACD crossover)
+        - 0: HOLD (no crossover)
+        dtype: int8 for memory efficiency
+        name: 'MACD_Trend_Signal_{fast}_{slow}_{signal}'
+    
+    Raises:
+    -------
+    ValueError
+        - If data is not a pandas DataFrame
+        - If data is empty
+        - If fast_period or slow_period or signal_period < 2
+        - If fast_period >= slow_period
+        - If slow_period + signal_period > len(data)
+        - If column not in DataFrame or non-numeric
+    
+    Examples:
+    ---------
+    >>> # Standard MACD strategy (12/26/9)
+    >>> signals = macd_trend_following_strategy(df)
+    >>> 
+    >>> # Fast MACD for day trading (8/17/9)
+    >>> signals = macd_trend_following_strategy(df, fast_period=8, slow_period=17)
+    >>> 
+    >>> # With zero-line filter (trade with trend only)
+    >>> signals = macd_trend_following_strategy(df, zero_line_filter=True)
+    >>> 
+    >>> # Count signals
+    >>> buy_signals = (signals == 1).sum()
+    >>> sell_signals = (signals == -1).sum()
+    
+    Notes:
+    ------
+    - MACD works best in trending markets (up or down)
+    - In sideways markets, consider using RSI Mean Reversion instead
+    - Zero-line filter reduces signals but improves quality
+    - Combine with volume analysis for confirmation
+    - Divergences (price vs MACD) can signal reversals
+    
+    References:
+    -----------
+    - Appel, Gerald (1979). "The Moving Average Convergence-Divergence Trading Method"
+    - Murphy, John J. (1999). "Technical Analysis of the Financial Markets"
+    
+    See Also:
+    ---------
+    golden_cross_strategy : SMA crossover signals (slower, long-term)
+    rsi_mean_reversion_strategy : Threshold crossing signals (mean reversion)
+    calculate_ema : Exponential moving average calculation
+    """
+    
+    # =========================================================================
+    # PARAMETER VALIDATION
+    # =========================================================================
+    
+    logging.info(f"Generating MACD Trend signals with fast={fast_period}, slow={slow_period}, signal={signal_period}, zero_filter={zero_line_filter}")
+    
+    # Validate data type
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError(
+            f"Input 'data' must be a pandas DataFrame. "
+            f"Got {type(data)}. "
+            f"Ensure you pass a DataFrame with OHLCV columns."
+        )
+    
+    # Validate data is not empty
+    if data.empty:
+        raise ValueError(
+            "Input DataFrame is empty. Cannot generate signals on empty data. "
+            "Please provide a DataFrame with at least one row of price data."
+        )
+    
+    # Validate fast_period
+    if fast_period < 2:
+        raise ValueError(
+            f"fast_period must be >= 2 for EMA calculation. Got: {fast_period}. "
+            f"Common values: 8 (aggressive), 12 (standard), 15 (conservative)."
+        )
+    
+    # Validate slow_period
+    if slow_period < 2:
+        raise ValueError(
+            f"slow_period must be >= 2 for EMA calculation. Got: {slow_period}. "
+            f"Common values: 20 (aggressive), 26 (standard), 30 (conservative)."
+        )
+    
+    # Validate signal_period
+    if signal_period < 2:
+        raise ValueError(
+            f"signal_period must be >= 2 for EMA calculation. Got: {signal_period}. "
+            f"Common values: 6 (aggressive), 9 (standard), 12 (conservative)."
+        )
+    
+    # Validate fast < slow
+    if fast_period >= slow_period:
+        raise ValueError(
+            f"fast_period ({fast_period}) must be less than slow_period ({slow_period}). "
+            f"MACD requires fast EMA to respond quicker than slow EMA. "
+            f"Standard ratio: 12/26 or 8/17."
+        )
+    
+    # Validate sufficient data length
+    min_length = slow_period + signal_period
+    if len(data) < min_length:
+        raise ValueError(
+            f"Insufficient data for MACD calculation. Need at least {min_length} rows "
+            f"(slow_period={slow_period} + signal_period={signal_period}), got {len(data)}. "
+            f"MACD requires data for slow EMA calculation plus signal line smoothing."
+        )
+    
+    # Validate column exists
+    if column not in data.columns:
+        raise ValueError(
+            f"Column '{column}' not found in DataFrame. "
+            f"Available columns: {list(data.columns)}. "
+            f"Common price columns: 'Close', 'Adj Close', 'Open', 'High', 'Low'."
+        )
+    
+    # Validate column is numeric
+    if not pd.api.types.is_numeric_dtype(data[column]):
+        raise ValueError(
+            f"Column '{column}' must contain numeric data for MACD calculation. "
+            f"Got dtype: {data[column].dtype}. "
+            f"Ensure price data is numeric (float or int)."
+        )
+    
+    # =========================================================================
+    # CALCULATE MACD COMPONENTS
+    # =========================================================================
+    
+    logging.info(f"Calculating MACD components on column '{column}'")
+    
+    # Calculate fast and slow EMAs
+    logging.info(f"Calculating EMA({fast_period}) and EMA({slow_period})")
+    ema_fast = calculate_ema(data, column=column, period=fast_period)
+    ema_slow = calculate_ema(data, column=column, period=slow_period)
+    
+    # Calculate MACD line (difference between fast and slow EMAs)
+    macd_line = ema_fast - ema_slow
+    logging.info(f"MACD line calculated: {macd_line.notna().sum()} valid values")
+    
+    # Calculate Signal line (EMA of MACD line)
+    # Create temporary DataFrame for signal line calculation
+    temp_df = pd.DataFrame({'MACD': macd_line}, index=data.index)
+    signal_line = calculate_ema(temp_df, column='MACD', period=signal_period)
+    logging.info(f"Signal line calculated: {signal_line.notna().sum()} valid values")
+    
+    # Calculate MACD histogram (for reference, not used in crossover detection)
+    macd_histogram = macd_line - signal_line
+    
+    # Log MACD statistics
+    valid_macd = macd_line.dropna()
+    if len(valid_macd) > 0:
+        logging.info(f"MACD statistics: min={valid_macd.min():.2f}, max={valid_macd.max():.2f}, mean={valid_macd.mean():.2f}")
+    
+    # =========================================================================
+    # DETECT MACD CROSSOVERS
+    # =========================================================================
+    
+    # Initialize signal series with 0 (HOLD)
+    signals = pd.Series(
+        index=data.index,
+        data=0,
+        dtype='int8',
+        name=f'MACD_Trend_Signal_{fast_period}_{slow_period}_{signal_period}'
+    )
+    
+    # Get previous day values for crossover detection
+    macd_prev = macd_line.shift(1)
+    signal_prev = signal_line.shift(1)
+    
+    # Detect bullish crossover (MACD crosses ABOVE signal)
+    # Condition: previous MACD <= previous Signal AND current MACD > current Signal
+    bullish_cross = (macd_prev <= signal_prev) & (macd_line > signal_line)
+    
+    # Detect bearish crossover (MACD crosses BELOW signal)
+    # Condition: previous MACD >= previous Signal AND current MACD < current Signal
+    bearish_cross = (macd_prev >= signal_prev) & (macd_line < signal_line)
+    
+    # Apply zero-line filter if enabled
+    if zero_line_filter:
+        # Only BUY when MACD > 0 (bullish territory)
+        bullish_cross = bullish_cross & (macd_line > 0)
+        # Only SELL when MACD < 0 (bearish territory)
+        bearish_cross = bearish_cross & (macd_line < 0)
+        logging.info("Zero-line filter applied: BUY only when MACD>0, SELL only when MACD<0")
+    
+    # Assign signals
+    signals[bullish_cross] = 1   # BUY signal
+    signals[bearish_cross] = -1  # SELL signal
+    
+    # =========================================================================
+    # LOG SIGNAL STATISTICS
+    # =========================================================================
+    
+    buy_count = (signals == 1).sum()
+    sell_count = (signals == -1).sum()
+    hold_count = (signals == 0).sum()
+    
+    logging.info(f"Signal generation complete:")
+    logging.info(f"  - Buy signals (Bullish crossover): {buy_count}")
+    logging.info(f"  - Sell signals (Bearish crossover): {sell_count}")
+    logging.info(f"  - Hold signals: {hold_count}")
+    logging.info(f"  - Total signals: {len(signals)}")
+    
+    # Log crossover details (first 5 of each type)
+    if buy_count > 0:
+        buy_dates = signals[signals == 1].index
+        logging.info(f"  - Bullish crossovers: {buy_count} times")
+        for i, date in enumerate(buy_dates[:5]):
+            macd_val = macd_line.loc[date]
+            signal_val = signal_line.loc[date]
+            logging.info(f"    * {date.strftime('%Y-%m-%d')}: MACD={macd_val:.2f}, Signal={signal_val:.2f}")
+        if buy_count > 5:
+            logging.info(f"    * ... and {buy_count - 5} more bullish crossovers")
+    
+    if sell_count > 0:
+        sell_dates = signals[signals == -1].index
+        logging.info(f"  - Bearish crossovers: {sell_count} times")
+        for i, date in enumerate(sell_dates[:5]):
+            macd_val = macd_line.loc[date]
+            signal_val = signal_line.loc[date]
+            logging.info(f"    * {date.strftime('%Y-%m-%d')}: MACD={macd_val:.2f}, Signal={signal_val:.2f}")
+        if sell_count > 5:
+            logging.info(f"    * ... and {sell_count - 5} more bearish crossovers")
+    
+    # Log current MACD position
+    if len(macd_line.dropna()) > 0:
+        current_macd = macd_line.iloc[-1]
+        current_signal = signal_line.iloc[-1]
+        
+        if pd.notna(current_macd) and pd.notna(current_signal):
+            if current_macd > current_signal:
+                position = f"BULLISH (MACD={current_macd:.2f} > Signal={current_signal:.2f})"
+            else:
+                position = f"BEARISH (MACD={current_macd:.2f} < Signal={current_signal:.2f})"
+            
+            if current_macd > 0:
+                territory = "positive territory (above zero line)"
+            else:
+                territory = "negative territory (below zero line)"
+            
+            logging.info(f"  - Current position: {position}, {territory}")
     
     return signals
