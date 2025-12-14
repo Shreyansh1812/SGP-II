@@ -131,9 +131,12 @@ def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> pd.DataFram
     -----
     Uses Streamlit's caching to prevent redundant API calls.
     Cache expires after 1 hour to allow fresh data fetching.
+    This function queries Yahoo Finance API directly when cache misses.
     """
-    logger.info(f"Fetching data for {ticker} from {start_date} to {end_date}")
+    logger.info(f"🌐 Fetching LIVE data from Yahoo Finance for {ticker} ({start_date} to {end_date})")
     data = get_stock_data(ticker, start_date, end_date)
+    if data is not None and not data.empty:
+        logger.info(f"✅ Successfully fetched {len(data)} rows from Yahoo Finance")
     return data
 
 
@@ -556,9 +559,9 @@ def render_charts_tab(figures: Dict, params: Dict):
     
     # Price chart with indicators
     st.subheader(f"💹 {params['ticker']} Price with Technical Indicators")
-    if 'price_with_indicators' in figures:
+    if 'price_indicators' in figures:
         st.plotly_chart(
-            figures['price_with_indicators'],
+            figures['price_indicators'],
             use_container_width=True,
             key="price_chart"
         )
@@ -814,6 +817,25 @@ def main():
     # Render sidebar and get parameters
     params = render_sidebar()
     
+    # Cache Control Buttons
+    st.sidebar.markdown("---")
+    cache_col1, cache_col2 = st.sidebar.columns(2)
+    
+    with cache_col1:
+        if st.button("🔄 Clear Cache", use_container_width=True, help="Clear cached data and fetch fresh from Yahoo Finance"):
+            st.cache_data.clear()
+            st.sidebar.success("✅ Cache cleared!")
+            st.rerun()
+    
+    with cache_col2:
+        if st.button("ℹ️ Cache Info", use_container_width=True, help="View cache status"):
+            st.sidebar.info(f"""
+            **Cache Settings:**
+            - Data cache TTL: 1 hour
+            - Indicators: Cached until cleared
+            - Yahoo Finance is queried on first load or after cache expiry
+            """)
+    
     # Run Backtest Button
     st.sidebar.markdown("---")
     run_button = st.sidebar.button(
@@ -835,7 +857,10 @@ def main():
         # Processing Pipeline
         try:
             # Step 1: Fetch Data
-            with st.spinner(f"📡 Fetching data for {params['ticker']}..."):
+            with st.spinner(f"📡 Fetching data for {params['ticker']} from Yahoo Finance..."):
+                # Check if data is in cache
+                cache_key = f"{params['ticker']}_{params['start_date']}_{params['end_date']}"
+                
                 data = fetch_stock_data(
                     params['ticker'],
                     params['start_date'],
@@ -858,10 +883,13 @@ def main():
                     - Check your internet connection
                     - Try a different date range
                     - Wait a few minutes and try again
+                    - Click "🔄 Clear Cache" button to force fresh download
                     """)
                     st.stop()
                 
-                st.success(f"✅ Loaded {len(data)} days of data")
+                # Show data source info
+                st.success(f"✅ Loaded {len(data)} days of data from Yahoo Finance")
+                st.caption(f"💾 Data cached for 1 hour | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Step 2: Calculate Indicators
             with st.spinner("📊 Calculating technical indicators..."):

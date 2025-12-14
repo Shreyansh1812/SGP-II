@@ -22,65 +22,91 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
     """
-    Fetch historical stock data from Yahoo Finance with retry logic.
+    Fetch historical stock data from Yahoo Finance API.
     
     Args:
-        ticker (str): Stock ticker symbol (e.g., 'RELIANCE.NS' for NSE stocks)
+        ticker (str): Stock ticker symbol (e.g., 'RELIANCE.NS' for NSE stocks, 'AAPL' for US stocks)
         start_date (str): Start date in 'YYYY-MM-DD' format
         end_date (str): End date in 'YYYY-MM-DD' format
     
     Returns:
         pd.DataFrame: Historical OHLCV data with columns [Open, High, Low, Close, Adj Close, Volume]
-        None: If download fails after retries
-    
-    Raises:
-        Exception: If API call fails or network error occurs
+        None: If download fails
     
     Example:
-        >>> df = fetch_stock_data("RELIANCE.NS", "2020-01-01", "2024-01-01")
+        >>> df = fetch_stock_data("AAPL", "2024-01-01", "2024-12-01")
         >>> print(df.head())
     """
     import time
     
-    max_retries = 3
-    retry_delay = 2  # seconds
+    max_retries = 2
+    base_delay = 2
     
+    # Method 1: Try Ticker.history() (recommended by yfinance v0.2.50+)
     for attempt in range(max_retries):
         try:
+            if attempt > 0:
+                delay = base_delay * attempt
+                logging.info(f"Waiting {delay}s before retry...")
+                time.sleep(delay)
+            
             logging.info(f"Fetching data for {ticker} from {start_date} to {end_date} (attempt {attempt + 1}/{max_retries})")
             
-            # Create Ticker object for better API handling
+            # Create Ticker object (no custom session needed with v0.2.50+)
             stock = yf.Ticker(ticker)
             
-            # Download data using Ticker.history() method (more reliable)
+            # Download data using Ticker.history()
             data = stock.history(
                 start=start_date,
                 end=end_date,
-                auto_adjust=False,  # Keep Adj Close separate
-                actions=False       # Don't include dividends/splits
+                auto_adjust=False,
+                actions=False
             )
             
-            # Check if data was successfully retrieved
-            if data.empty:
-                if attempt < max_retries - 1:
-                    logging.warning(f"No data retrieved for {ticker} (attempt {attempt + 1}). Retrying in {retry_delay}s...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    logging.warning(f"No data retrieved for {ticker} after {max_retries} attempts. Check ticker symbol or date range.")
-                    return None
+            if not data.empty:
+                logging.info(f"✅ Successfully fetched {len(data)} rows of data for {ticker}")
+                return data
             
-            logging.info(f"✓ Successfully fetched {len(data)} rows of data for {ticker}")
-            return data
+            logging.warning(f"No data retrieved for {ticker} (attempt {attempt + 1}).")
         
         except Exception as e:
-            if attempt < max_retries - 1:
-                logging.warning(f"Error fetching data for {ticker} (attempt {attempt + 1}): {str(e)}. Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
-            else:
-                logging.error(f"Failed to fetch data for {ticker} after {max_retries} attempts: {str(e)}")
-                return None
+            logging.warning(f"Error fetching {ticker}: {str(e)}")
+            if attempt == max_retries - 1:
+                logging.error(f"Failed after {max_retries} attempts. Trying fallback method...")
     
+    # Method 2: Fallback to yf.download()
+    try:
+        logging.info(f"Using fallback download method for {ticker}...")
+        
+        data = yf.download(
+            ticker,
+            start=start_date,
+            end=end_date,
+            progress=False,
+            auto_adjust=False,
+            actions=False
+        )
+        
+        if not data.empty:
+            # Flatten MultiIndex columns if present
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.droplevel(1)
+            
+            logging.info(f"✅ Fallback successful: {len(data)} rows fetched for {ticker}")
+            return data
+        else:
+            logging.error(f"Fallback method also returned empty data for {ticker}")
+    
+    except Exception as e:
+        logging.error(f"Fallback method failed for {ticker}: {str(e)}")
+    
+    # All methods failed
+    logging.error(f"❌ Failed to fetch data for {ticker} from Yahoo Finance.")
+    logging.error(f"Possible reasons:")
+    logging.error(f"  1. Invalid ticker symbol: {ticker}")
+    logging.error(f"  2. Network connectivity issues")
+    logging.error(f"  3. Date range has no trading data")
+    logging.error(f"  4. Yahoo Finance API temporarily unavailable")
     return None
 
 
