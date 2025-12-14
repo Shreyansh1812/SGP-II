@@ -40,6 +40,8 @@ jobs:
           python -c "import yfinance, pandas, numpy, plotly; print('✓ All core packages installed')"
       
       - name: Run Data Loader Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           echo "========================================="
           echo "Testing Phase 2: Data Loader Module"
@@ -47,6 +49,8 @@ jobs:
           python Tests/test_data_loader.py
       
       - name: Run Indicators Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           echo "========================================="
           echo "Testing Phase 3: Technical Indicators"
@@ -54,6 +58,8 @@ jobs:
           python Tests/test_indicators.py
       
       - name: Run Strategy Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           echo "========================================="
           echo "Testing Phase 4: Trading Strategies"
@@ -61,6 +67,8 @@ jobs:
           python Tests/test_strategy.py
       
       - name: Run Backtester Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           echo "========================================="
           echo "Testing Phase 5: Backtesting Engine"
@@ -68,6 +76,8 @@ jobs:
           python Tests/test_backtester.py
       
       - name: Run Plotting Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           echo "========================================="
           echo "Testing Phase 6: Visualization Module"
