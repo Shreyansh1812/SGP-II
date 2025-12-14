@@ -4,6 +4,8 @@ Tests various scenarios: valid data, empty data, missing columns, etc.
 """
 
 import pandas as pd
+import numpy as np
+from unittest.mock import patch, MagicMock
 from src.data_loader import fetch_stock_data, validate_data
 
 print("=" * 70)
@@ -11,18 +13,33 @@ print("TEST SUITE: validate_data() Function")
 print("=" * 70)
 
 # =============================================================================
-# TEST 1: Valid Data (Should Pass)
+# TEST 1: Valid Data (Should Pass) - MOCKED
 # =============================================================================
 print("\n" + "=" * 70)
-print("TEST 1: Valid Stock Data (RELIANCE.NS)")
+print("TEST 1: Valid Stock Data (RELIANCE.NS) - Mocked")
 print("=" * 70)
 
-df_valid = fetch_stock_data("RELIANCE.NS", "2023-01-01", "2023-12-31")
+with patch('yfinance.Ticker') as mock_ticker_class:
+    dates = pd.date_range('2023-01-01', '2023-12-31', freq='D')
+    mock_data = pd.DataFrame({
+        'Open': np.random.uniform(2400, 2500, len(dates)),
+        'High': np.random.uniform(2450, 2550, len(dates)),
+        'Low': np.random.uniform(2350, 2450, len(dates)),
+        'Close': np.random.uniform(2400, 2500, len(dates)),
+        'Volume': np.random.randint(5000000, 10000000, len(dates))
+    }, index=dates)
+    mock_data.index.name = 'Date'
+    
+    mock_ticker = MagicMock()
+    mock_ticker.history.return_value = mock_data
+    mock_ticker_class.return_value = mock_ticker
+    
+    df_valid = fetch_stock_data("RELIANCE.NS", "2023-01-01", "2023-12-31")
 
 if df_valid is not None:
     try:
         result = validate_data(df_valid, "RELIANCE.NS")
-        print(f"✅ TEST PASSED: Data validation successful")
+        print(f"✅ TEST PASSED: Data validation successful (using mocked data)")
         print(f"   - Rows: {len(df_valid)}")
         print(f"   - Columns: {df_valid.columns.tolist()}")
     except ValueError as e:

@@ -5,6 +5,7 @@ Tests all cleaning operations with various data quality issues
 
 import pandas as pd
 import numpy as np
+from unittest.mock import patch, MagicMock
 from src.data_loader import fetch_stock_data, clean_data
 
 print("=" * 80)
@@ -12,13 +13,29 @@ print("TEST SUITE: clean_data() Function")
 print("=" * 80)
 
 # =============================================================================
-# TEST 1: Real-World Data from yfinance (Multi-Level Columns)
+# TEST 1: Real-World Data from yfinance (Multi-Level Columns) - MOCKED
 # =============================================================================
 print("\n" + "=" * 80)
-print("TEST 1: Real Stock Data with Multi-Level Columns")
+print("TEST 1: Real Stock Data with Multi-Level Columns (Mocked)")
 print("=" * 80)
 
-df_real = fetch_stock_data("RELIANCE.NS", "2023-01-01", "2023-12-31")
+# Create mock data to simulate yfinance response
+with patch('yfinance.Ticker') as mock_ticker_class:
+    dates = pd.date_range('2023-01-01', '2023-12-31', freq='D')
+    mock_data = pd.DataFrame({
+        'Open': np.random.uniform(2400, 2500, len(dates)),
+        'High': np.random.uniform(2450, 2550, len(dates)),
+        'Low': np.random.uniform(2350, 2450, len(dates)),
+        'Close': np.random.uniform(2400, 2500, len(dates)),
+        'Volume': np.random.randint(5000000, 10000000, len(dates))
+    }, index=dates)
+    mock_data.index.name = 'Date'
+    
+    mock_ticker = MagicMock()
+    mock_ticker.history.return_value = mock_data
+    mock_ticker_class.return_value = mock_ticker
+    
+    df_real = fetch_stock_data("RELIANCE.NS", "2023-01-01", "2023-12-31")
 
 if df_real is not None:
     print(f"\nBefore cleaning:")
@@ -34,7 +51,7 @@ if df_real is not None:
     print(f"  - Columns: {df_cleaned.columns.tolist()}")
     print(f"  - MultiIndex: {isinstance(df_cleaned.columns, pd.MultiIndex)}")
     print(f"  - NaN count: {df_cleaned.isnull().sum().sum()}")
-    print(f"\n✅ TEST PASSED: Multi-level columns flattened successfully")
+    print(f"\n✅ TEST PASSED: Multi-level columns flattened successfully (using mocked data)")
     print(f"\nFirst 3 rows:")
     print(df_cleaned.head(3))
 

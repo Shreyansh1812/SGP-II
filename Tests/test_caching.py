@@ -4,8 +4,10 @@ Tests caching functionality, file I/O, and error handling
 """
 
 import pandas as pd
+import numpy as np
 import os
 import shutil
+from unittest.mock import patch, MagicMock
 from src.data_loader import fetch_stock_data, clean_data, save_data, load_data
 
 print("=" * 80)
@@ -16,14 +18,31 @@ print("=" * 80)
 TEST_DIR = "data/test_cache/"
 
 # =============================================================================
-# TEST 1: save_data() - Basic Functionality
+# TEST 1: save_data() - Basic Functionality - MOCKED
 # =============================================================================
 print("\n" + "=" * 80)
-print("TEST 1: save_data() - Save DataFrame to CSV")
+print("TEST 1: save_data() - Save DataFrame to CSV (Mocked)")
 print("=" * 80)
 
-# Fetch and clean real data
-df_real = fetch_stock_data("RELIANCE.NS", "2023-01-01", "2023-01-31")
+# Mock yfinance call
+with patch('yfinance.Ticker') as mock_ticker_class:
+    dates = pd.date_range('2023-01-01', '2023-01-31', freq='D')
+    mock_data = pd.DataFrame({
+        'Open': np.random.uniform(2400, 2500, len(dates)),
+        'High': np.random.uniform(2450, 2550, len(dates)),
+        'Low': np.random.uniform(2350, 2450, len(dates)),
+        'Close': np.random.uniform(2400, 2500, len(dates)),
+        'Volume': np.random.randint(5000000, 10000000, len(dates))
+    }, index=dates)
+    mock_data.index.name = 'Date'
+    
+    mock_ticker = MagicMock()
+    mock_ticker.history.return_value = mock_data
+    mock_ticker_class.return_value = mock_ticker
+    
+    # Fetch and clean real data
+    df_real = fetch_stock_data("RELIANCE.NS", "2023-01-01", "2023-01-31")
+
 if df_real is not None:
     df_cleaned = clean_data(df_real, "RELIANCE.NS")
     
@@ -40,7 +59,7 @@ if df_real is not None:
         TEST_DIR
     )
     
-    print(f"\n✅ TEST PASSED: Data saved successfully")
+    print(f"\n✅ TEST PASSED: Data saved successfully (using mocked data)")
     print(f"   File: {saved_path}")
     print(f"   Exists: {os.path.exists(saved_path)}")
     print(f"   Size: {os.path.getsize(saved_path)} bytes")

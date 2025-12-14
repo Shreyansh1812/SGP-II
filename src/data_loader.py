@@ -2,7 +2,7 @@
 Data Loader Module
 
 This module handles fetching, validating, cleaning, and caching stock data
-from Yahoo Finance for backtesting purposes.
+from various data providers for backtesting purposes.
 """
 
 import yfinance as yf
@@ -15,14 +15,50 @@ from typing import Optional
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from config import DATA_PATH
+from src.data_provider import create_provider, DataProvider
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Default data provider (can be changed for production)
+_default_provider = None
+
+
+def set_data_provider(provider: DataProvider):
+    """
+    Set the data provider to use for fetching stock data.
+    
+    This allows swapping between Yahoo Finance, Alpha Vantage, IEX Cloud, etc.
+    
+    Args:
+        provider: DataProvider instance
+        
+    Example:
+        >>> from src.data_provider import create_provider
+        >>> provider = create_provider("alphavantage", api_key="YOUR_KEY")
+        >>> set_data_provider(provider)
+    """
+    global _default_provider
+    _default_provider = provider
+    logging.info(f"Data provider set to: {provider.__class__.__name__}")
+
+
+def get_data_provider() -> DataProvider:
+    """
+    Get the current data provider instance.
+    
+    Returns:
+        DataProvider instance (defaults to YahooFinanceProvider)
+    """
+    global _default_provider
+    if _default_provider is None:
+        _default_provider = create_provider("yahoo")
+    return _default_provider
+
 
 def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
     """
-    Fetch historical stock data from Yahoo Finance API.
+    Fetch historical stock data using the configured data provider.
     
     Args:
         ticker (str): Stock ticker symbol (e.g., 'RELIANCE.NS' for NSE stocks, 'AAPL' for US stocks)
@@ -37,77 +73,20 @@ def fetch_stock_data(ticker: str, start_date: str, end_date: str) -> Optional[pd
         >>> df = fetch_stock_data("AAPL", "2024-01-01", "2024-12-01")
         >>> print(df.head())
     """
-    import time
+    provider = get_data_provider()
     
-    max_retries = 2
-    base_delay = 2
-    
-    # Method 1: Try Ticker.history() (recommended by yfinance v0.2.50+)
-    for attempt in range(max_retries):
-        try:
-            if attempt > 0:
-                delay = base_delay * attempt
-                logging.info(f"Waiting {delay}s before retry...")
-                time.sleep(delay)
-            
-            logging.info(f"Fetching data for {ticker} from {start_date} to {end_date} (attempt {attempt + 1}/{max_retries})")
-            
-            # Create Ticker object (no custom session needed with v0.2.50+)
-            stock = yf.Ticker(ticker)
-            
-            # Download data using Ticker.history()
-            data = stock.history(
-                start=start_date,
-                end=end_date,
-                auto_adjust=False,
-                actions=False
-            )
-            
-            if not data.empty:
-                logging.info(f"✅ Successfully fetched {len(data)} rows of data for {ticker}")
-                return data
-            
-            logging.warning(f"No data retrieved for {ticker} (attempt {attempt + 1}).")
-        
-        except Exception as e:
-            logging.warning(f"Error fetching {ticker}: {str(e)}")
-            if attempt == max_retries - 1:
-                logging.error(f"Failed after {max_retries} attempts. Trying fallback method...")
-    
-    # Method 2: Fallback to yf.download()
     try:
-        logging.info(f"Using fallback download method for {ticker}...")
+        data = provider.fetch(ticker, start_date, end_date)
         
-        data = yf.download(
-            ticker,
-            start=start_date,
-            end=end_date,
-            progress=False,
-            auto_adjust=False,
-            actions=False
-        )
-        
-        if not data.empty:
-            # Flatten MultiIndex columns if present
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.droplevel(1)
-            
-            logging.info(f"✅ Fallback successful: {len(data)} rows fetched for {ticker}")
+        if data is not None and not data.empty:
             return data
         else:
-            logging.error(f"Fallback method also returned empty data for {ticker}")
+            logging.error(f"❌ Failed to fetch data for {ticker} from {provider.__class__.__name__}")
+            return None
     
     except Exception as e:
-        logging.error(f"Fallback method failed for {ticker}: {str(e)}")
-    
-    # All methods failed
-    logging.error(f"❌ Failed to fetch data for {ticker} from Yahoo Finance.")
-    logging.error(f"Possible reasons:")
-    logging.error(f"  1. Invalid ticker symbol: {ticker}")
-    logging.error(f"  2. Network connectivity issues")
-    logging.error(f"  3. Date range has no trading data")
-    logging.error(f"  4. Yahoo Finance API temporarily unavailable")
-    return None
+        logging.error(f"❌ Unexpected error fetching {ticker}: {str(e)}")
+        return None
 
 
 def validate_data(df: pd.DataFrame, ticker: str, min_rows: int = 10) -> bool:
