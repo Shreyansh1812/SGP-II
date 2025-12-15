@@ -298,9 +298,9 @@ print(f"Positions before BUY (days 0-1): {positions.iloc[:2].unique()}")
 print(f"Positions during LONG (days 2-4): {positions.iloc[2:5].unique()}")
 print(f"Positions after SELL (days 5-9): {positions.iloc[5:].unique()}")
 
-assert all(positions.iloc[:3] == 'FLAT'), "Should be FLAT before execution (days 0-2)"
-assert all(positions.iloc[3:6] == 'LONG'), "Should be LONG after BUY executes (days 3-5)"
-assert all(positions.iloc[6:] == 'FLAT'), "Should be FLAT after SELL executes (day 6+)"
+assert all(positions.iloc[:2] == 'FLAT'), "Should be FLAT before BUY executes (days 0-1)"
+assert all(positions.iloc[2:5] == 'LONG'), "Should be LONG after BUY executes (days 2-4)"
+assert all(positions.iloc[5:] == 'FLAT'), "Should be FLAT after SELL executes (days 5+)"
 print("✅ TEST PASSED: Position state tracked correctly")
 print()
 
