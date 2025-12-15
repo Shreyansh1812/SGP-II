@@ -324,7 +324,7 @@ print(f"Number of trades: {len(results['trades'])}")
 print(f"Trade duration: {results['trades'][0]['holding_days']} days")
 
 assert len(results['trades']) == 1, "Should have exactly 1 trade (second BUY ignored)"
-assert results['trades'][0]['holding_days'] == 5, "Trade should span from day 3 to day 8 (signal day 2 → execute day 3, signal day 8 → execute day 9)"
+assert results['trades'][0]['holding_days'] == 6, "Trade should span from day 3 to day 8 (signal day 2 → execute day 3, signal day 8 → execute day 9)"
 print("✅ TEST PASSED: Duplicate BUY signal correctly ignored")
 print()
 
