@@ -12,20 +12,50 @@ This test suite verifies the complete data acquisition workflow including:
 - Round-trip data integrity
 - Performance comparison (cache vs API)
 
+Note: Uses mocked API calls in CI environments for stability.
+
 Author: Shreyansh1812
 Date: December 2025
 """
 
 import sys
 import os
+from unittest.mock import patch, MagicMock
 
 # Add src directory to Python path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from data_loader import get_stock_data
 import pandas as pd
+import numpy as np
 import time
 import shutil
+
+# =============================================================================
+# MOCK DATA HELPER
+# =============================================================================
+def create_mock_stock_data(start_date, end_date, base_price=2400):
+    """Create realistic mock stock data for testing without API calls."""
+    dates = pd.date_range(start_date, end_date, freq='D')
+    # Remove weekends for realistic stock data
+    dates = dates[dates.dayofweek < 5]
+    
+    # Generate realistic OHLCV data
+    np.random.seed(42)  # Reproducible data
+    closes = base_price + np.cumsum(np.random.randn(len(dates)) * 10)
+    
+    data = pd.DataFrame({
+        'Open': closes + np.random.uniform(-5, 5, len(dates)),
+        'High': closes + np.random.uniform(5, 15, len(dates)),
+        'Low': closes - np.random.uniform(5, 15, len(dates)),
+        'Close': closes,
+        'Volume': np.random.randint(1000000, 5000000, len(dates))
+    }, index=dates)
+    
+    return data
+
+# Check if we should use mocked data (CI environment or explicit flag)
+USE_MOCK = os.environ.get('CI') == 'true' or os.environ.get('USE_MOCK_DATA') == 'true'
 
 # =============================================================================
 # TEST CONFIGURATION
@@ -33,6 +63,8 @@ import shutil
 TEST_DIR = "data/test_orchestrator/"
 print("=" * 80)
 print("TEST SUITE: get_stock_data() Orchestrator Function")
+if USE_MOCK:
+    print("(Using mocked data provider for CI stability)")
 print("=" * 80)
 print()
 
@@ -55,8 +87,15 @@ print()
 if os.path.exists(TEST_DIR):
     shutil.rmtree(TEST_DIR)
 
-# Call orchestrator - should fetch from API
-df1 = get_stock_data("RELIANCE.NS", "2023-01-01", "2023-01-31", TEST_DIR)
+# Call orchestrator - should fetch from API (or mock in CI)
+if USE_MOCK:
+    with patch('src.data_loader.get_data_provider') as mock_provider:
+        mock_instance = MagicMock()
+        mock_instance.fetch.return_value = create_mock_stock_data("2023-01-01", "2023-01-31")
+        mock_provider.return_value = mock_instance
+        df1 = get_stock_data("RELIANCE.NS", "2023-01-01", "2023-01-31", TEST_DIR)
+else:
+    df1 = get_stock_data("RELIANCE.NS", "2023-01-01", "2023-01-31", TEST_DIR)
 
 if df1 is not None:
     print(f"\n✅ TEST PASSED: Orchestrator returned DataFrame")

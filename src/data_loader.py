@@ -5,7 +5,6 @@ This module handles fetching, validating, cleaning, and caching stock data
 from various data providers for backtesting purposes.
 """
 
-import yfinance as yf
 import pandas as pd
 import logging
 import os

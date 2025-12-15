@@ -10,7 +10,7 @@ Test Coverage:
     - TEST 3: Parameter validation & error handling
     - TEST 4: Multiple crossovers detection
     - TEST 5: No crossover scenario
-    - TEST 6: Real stock data integration
+    - TEST 6: Real stock data integration (with mocking for CI stability)
     - TEST 7: Edge case (insufficient data)
 
 Author: Shreyansh Patel
@@ -22,6 +22,7 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -342,14 +343,31 @@ if os.path.exists(test_data_path):
         print("✅ TEST 6: Real stock data integration - SKIPPED (insufficient data)")
 else:
     print(f"⚠️  Test data not found: {test_data_path}")
-    print("Attempting to fetch fresh data...")
+    print("Attempting to fetch fresh data with mocked API call...")
     
     try:
-        real_data = get_stock_data("RELIANCE.NS", "2023-06-01", "2023-06-30")
+        # Mock the data provider to avoid real API calls in CI
+        with patch('src.data_loader.get_data_provider') as mock_provider:
+            # Create mock data
+            dates = pd.date_range('2023-06-01', '2023-06-30', freq='D')
+            mock_data = pd.DataFrame({
+                'Open': np.random.uniform(2400, 2500, len(dates)),
+                'High': np.random.uniform(2450, 2550, len(dates)),
+                'Low': np.random.uniform(2350, 2450, len(dates)),
+                'Close': np.random.uniform(2400, 2500, len(dates)),
+                'Volume': np.random.randint(1000000, 5000000, len(dates))
+            }, index=dates)
+            
+            mock_instance = MagicMock()
+            mock_instance.fetch.return_value = mock_data
+            mock_provider.return_value = mock_instance
+            
+            real_data = get_stock_data("RELIANCE.NS", "2023-06-01", "2023-06-30")
+            
         if real_data is not None and len(real_data) >= 20:
             signals_real = golden_cross_strategy(real_data, fast_period=5, slow_period=10)
             print(f"Signals generated: {(signals_real != 0).sum()} crossovers out of {len(signals_real)} days")
-            print("✅ TEST 6: Real stock data integration - PASSED")
+            print("✅ TEST 6: Real stock data integration - PASSED (with mocked API)")
         else:
             print("⚠️  Could not fetch sufficient data")
             print("✅ TEST 6: Real stock data integration - SKIPPED")
