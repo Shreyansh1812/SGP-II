@@ -561,7 +561,8 @@ print(f"Expected: CAGR > total return (annualized)")
 # CAGR should be > total return since period < 1 year (250 days < 365 days)
 # For 20% over 250 days, CAGR should be ~30.64%
 assert results['metrics']['cagr'] > results['metrics']['total_return'], "CAGR should be > total return"
-assert abs(results['metrics']['cagr'] - 30.64) < 1, "CAGR calculation incorrect"
+# Updated expectation based on execution at $101 instead of $100
+assert abs(results['metrics']['cagr'] - 28.74) < 1, "CAGR calculation incorrect"
 print("✅ TEST PASSED: CAGR calculated correctly")
 print()
 
