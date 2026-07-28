@@ -62,3 +62,6 @@ desktop.ini
 # Logs
 *.log
 logs/
+
+#Markdown Files (Only for understanding)
+repository_analysis.md
