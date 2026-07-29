@@ -378,14 +378,14 @@ def run_backtest(
     logger.info(f"  - Date Range: {data.index[0].date()} to {data.index[-1].date()}")
     logger.info(f"  - Total Days: {len(data)}")
     logger.info(f"  - Initial Capital: ${initial_capital:,.2f}")
-    logger.info(f"  - Commission: {commission*100:.2f}% (not yet implemented)")
-    logger.info(f"  - Slippage: {slippage*100:.3f}% (not yet implemented)")
+    logger.info(f"  - Commission: {commission*100:.2f}%")
+    logger.info(f"  - Slippage: {slippage*100:.3f}%")
     logger.info(f"  - Signals Summary: BUY={sum(signals==1)}, SELL={sum(signals==-1)}, HOLD={sum(signals==0)}")
     logger.info("")
     
     # Execute trades and track portfolio
     logger.info("Executing trades and tracking portfolio...")
-    trades, equity_curve, daily_positions = execute_trades(data, signals, initial_capital)
+    trades, equity_curve, daily_positions = execute_trades(data, signals, initial_capital, commission, slippage)
     logger.info(f"Trade execution complete: {len(trades)} trades executed")
     logger.info("")
     
@@ -434,7 +434,9 @@ def run_backtest(
 def execute_trades(
     data: pd.DataFrame,
     signals: pd.Series,
-    initial_capital: float
+    initial_capital: float,
+    commission: float = 0.0,
+    slippage: float = 0.0
 ) -> Tuple[List[Dict], pd.Series, pd.Series]:
     """
     Simulate trade execution and track portfolio state day-by-day.
@@ -650,11 +652,18 @@ def execute_trades(
             if i + 1 < len(data) and cash > 0:
                 next_date = data.index[i + 1]
                 next_row = data.iloc[i + 1]
-                execution_price = next_row['Open']
                 
-                shares = int(cash // execution_price)  # Floor division for whole shares
+                # Apply slippage to entry price (increase price)
+                execution_price = next_row['Open'] * (1 + slippage)
+
+                # Calculate shares accounting for commission
+                cost_per_share = execution_price * (1 + commission)
+                shares = int(cash // cost_per_share)  # Floor division for whole shares
+
                 if shares > 0:
-                    cost = shares * execution_price
+                    trade_value = shares * execution_price
+                    trade_commission = trade_value * commission
+                    cost = trade_value + trade_commission
                     cash -= cost
                     entry_date = next_date
                     entry_price = execution_price
@@ -666,14 +675,19 @@ def execute_trades(
             if i + 1 < len(data):
                 next_date = data.index[i + 1]
                 next_row = data.iloc[i + 1]
-                execution_price = next_row['Open']
                 
-                proceeds = shares * execution_price
+                # Apply slippage to exit price (decrease price)
+                execution_price = next_row['Open'] * (1 - slippage)
+
+                trade_value = shares * execution_price
+                trade_commission = trade_value * commission
+                proceeds = trade_value - trade_commission
                 cash += proceeds
                 
-                # Calculate trade metrics
-                return_pct = (execution_price - entry_price) / entry_price * 100
-                return_abs = proceeds - (shares * entry_price)
+                # Calculate trade metrics (based on actual cash flow)
+                total_cost = shares * entry_price * (1 + commission)
+                return_pct = (proceeds - total_cost) / total_cost * 100
+                return_abs = proceeds - total_cost
                 holding_days = (next_date - entry_date).days
                 
                 # Record trade
@@ -710,12 +724,17 @@ def execute_trades(
     
     # Handle open position at end of backtest
     if position == 'LONG':
-        final_price = data['Close'].iloc[-1]
+        # Apply slippage to final mark-to-market exit
+        final_price = data['Close'].iloc[-1] * (1 - slippage)
         final_date = data.index[-1]
-        proceeds = shares * final_price
         
-        return_pct = (final_price - entry_price) / entry_price * 100
-        return_abs = proceeds - (shares * entry_price)
+        trade_value = shares * final_price
+        trade_commission = trade_value * commission
+        proceeds = trade_value - trade_commission
+
+        total_cost = shares * entry_price * (1 + commission)
+        return_pct = (proceeds - total_cost) / total_cost * 100
+        return_abs = proceeds - total_cost
         holding_days = (final_date - entry_date).days
         
         trade = {

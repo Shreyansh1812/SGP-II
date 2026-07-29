@@ -132,21 +132,9 @@ def create_sample_equity_curve(days=100, initial_capital=10000):
 
 def test_01_invalid_data_type():
     """TEST 1: Non-DataFrame input should raise TypeError"""
-    print("\nTEST 1: Invalid data type for plot_price_with_indicators()")
-    
-    try:
+    import pytest
+    with pytest.raises(TypeError):
         fig = plot_price_with_indicators(data="not a dataframe")
-        print("[FAIL] TEST 1 FAILED: Should raise TypeError for non-DataFrame")
-        return False
-    except TypeError as e:
-        if "DataFrame" in str(e):
-            print("[PASS] TEST 1 PASSED: TypeError raised correctly")
-            return True
-        else:
-            print(f"[FAIL] TEST 1 FAILED: Wrong error message: {e}")
-            return False
-
-
 def test_02_basic_price_chart():
     """TEST 2: Verify basic price chart generates correctly"""
     print("\nTEST 2: Basic price chart generation")
@@ -154,20 +142,13 @@ def test_02_basic_price_chart():
     data = create_sample_data(50)
     fig = plot_price_with_indicators(data=data)
     
-    if not isinstance(fig, go.Figure):
-        print(f"[FAIL] TEST 2 FAILED: Expected go.Figure, got {type(fig)}")
-        return False
+    assert isinstance(fig, go.Figure)
     
-    if len(fig.data) == 0:
-        print("[FAIL] TEST 2 FAILED: Figure has no traces")
-        return False
+    assert len(fig.data) > 0
     
-    if not isinstance(fig.data[0], go.Candlestick):
-        print(f"[FAIL] TEST 2 FAILED: First trace should be Candlestick")
-        return False
+    assert isinstance(fig.data[0], go.Candlestick)
     
     print("[PASS] TEST 2 PASSED: Price chart structure correct")
-    return True
 
 
 def test_03_signals_chart():
@@ -179,18 +160,13 @@ def test_03_signals_chart():
     
     fig = plot_signals(data=data, signals=signals)
     
-    if not isinstance(fig, go.Figure):
-        print(f"[FAIL] TEST 3 FAILED: Expected go.Figure")
-        return False
+    assert isinstance(fig, go.Figure)
     
     marker_traces = [trace for trace in fig.data if isinstance(trace, go.Scatter) and trace.mode == 'markers']
     
-    if len(marker_traces) == 0:
-        print("[FAIL] TEST 3 FAILED: No marker traces found")
-        return False
+    assert len(marker_traces) > 0
     
     print("[PASS] TEST 3 PASSED: Signal markers added correctly")
-    return True
 
 
 def test_04_equity_curve():
@@ -200,20 +176,13 @@ def test_04_equity_curve():
     equity = create_sample_equity_curve(100, 10000)
     fig = plot_equity_curve(equity_curve=equity, initial_capital=10000)
     
-    if not isinstance(fig, go.Figure):
-        print(f"[FAIL] TEST 4 FAILED: Expected go.Figure")
-        return False
+    assert isinstance(fig, go.Figure)
     
-    if len(fig.data) == 0:
-        print("[FAIL] TEST 4 FAILED: No traces in equity curve")
-        return False
+    assert len(fig.data) > 0
     
-    if not isinstance(fig.data[0], go.Scatter):
-        print(f"[FAIL] TEST 4 FAILED: Expected Scatter trace")
-        return False
+    assert isinstance(fig.data[0], go.Scatter)
     
     print("[PASS] TEST 4 PASSED: Equity curve structure correct")
-    return True
 
 
 def test_05_drawdown_chart():
@@ -223,20 +192,13 @@ def test_05_drawdown_chart():
     equity = create_sample_equity_curve(100, 10000)
     fig = plot_drawdown(equity_curve=equity)
     
-    if not isinstance(fig, go.Figure):
-        print(f"[FAIL] TEST 5 FAILED: Expected go.Figure")
-        return False
+    assert isinstance(fig, go.Figure)
     
-    if len(fig.data) == 0:
-        print("[FAIL] TEST 5 FAILED: No traces in drawdown chart")
-        return False
+    assert len(fig.data) > 0
     
-    if fig.data[0].fill != 'tozeroy':
-        print("[FAIL] TEST 5 FAILED: Drawdown should have fill to zero")
-        return False
+    assert fig.data[0].fill == 'tozeroy'
     
     print("[PASS] TEST 5 PASSED: Drawdown structure correct")
-    return True
 
 
 def test_06_returns_distribution():
@@ -246,17 +208,12 @@ def test_06_returns_distribution():
     trades = create_sample_trades()
     fig = plot_returns_distribution(trades=trades)
     
-    if not isinstance(fig, go.Figure):
-        print(f"[FAIL] TEST 6 FAILED: Expected go.Figure")
-        return False
+    assert isinstance(fig, go.Figure)
     
     histogram_found = any(isinstance(trace, go.Histogram) for trace in fig.data)
-    if not histogram_found:
-        print("[FAIL] TEST 6 FAILED: No histogram traces found")
-        return False
+    assert histogram_found
     
     print("[PASS] TEST 6 PASSED: Returns histogram structure correct")
-    return True
 
 
 def test_07_monthly_heatmap():
@@ -266,16 +223,11 @@ def test_07_monthly_heatmap():
     equity = create_sample_equity_curve(365, 10000)  # 1 year
     fig = plot_monthly_returns(equity_curve=equity)
     
-    if not isinstance(fig, go.Figure):
-        print(f"[FAIL] TEST 7 FAILED: Expected go.Figure")
-        return False
+    assert isinstance(fig, go.Figure)
     
-    if not isinstance(fig.data[0], go.Heatmap):
-        print(f"[FAIL] TEST 7 FAILED: Expected Heatmap")
-        return False
+    assert isinstance(fig.data[0], go.Heatmap)
     
     print("[PASS] TEST 7 PASSED: Monthly heatmap structure correct")
-    return True
 
 
 def test_08_complete_report():
@@ -309,96 +261,18 @@ def test_08_complete_report():
         strategy_name="Test Strategy"
     )
     
-    if not isinstance(figures, dict):
-        print(f"[FAIL] TEST 8 FAILED: Expected dict")
-        return False
+    assert isinstance(figures, dict)
     
     expected_keys = ['price_indicators', 'signals', 'equity_curve', 'drawdown', 'returns_distribution', 'monthly_returns']
     missing_keys = [key for key in expected_keys if key not in figures]
     
-    if missing_keys:
-        print(f"[FAIL] TEST 8 FAILED: Missing chart keys: {missing_keys}")
-        return False
+    assert not missing_keys
     
     for key, fig in figures.items():
-        if not isinstance(fig, go.Figure):
-            print(f"[FAIL] TEST 8 FAILED: {key} is not a Figure")
-            return False
+        assert isinstance(fig, go.Figure)
     
     print("[PASS] TEST 8 PASSED: Complete report structure correct")
-    return True
 
 
 # ==================== TEST RUNNER ====================
 
-def run_all_tests():
-    """Run all tests and report results"""
-    print("=" * 60)
-    print("PHASE 6: VISUALIZATION MODULE - TEST SUITE")
-    print("=" * 60)
-    print(f"Testing plotting.py functions")
-    print(f"Total Tests: 8 (Core Functionality)")
-    print("=" * 60)
-    
-    tests = [
-        test_01_invalid_data_type,
-        test_02_basic_price_chart,
-        test_03_signals_chart,
-        test_04_equity_curve,
-        test_05_drawdown_chart,
-        test_06_returns_distribution,
-        test_07_monthly_heatmap,
-        test_08_complete_report
-    ]
-    
-    results = []
-    passed = 0
-    failed = 0
-    
-    for test_func in tests:
-        try:
-            result = test_func()
-            results.append((test_func.__name__, result))
-            if result:
-                passed += 1
-            else:
-                failed += 1
-        except Exception as e:
-            print(f"\n[CRASH] {test_func.__name__} CRASHED: {e}")
-            results.append((test_func.__name__, False))
-            failed += 1
-    
-    # Print summary
-    print("\n" + "=" * 60)
-    print("TEST SUMMARY")
-    print("=" * 60)
-    print(f"Total Tests: {len(tests)}")
-    print(f"Passed: {passed}")
-    print(f"Failed: {failed}")
-    print(f"Success Rate: {passed/len(tests)*100:.1f}%")
-    print("=" * 60)
-    
-    if failed > 0:
-        print("\nFAILED TESTS:")
-        for test_name, result in results:
-            if not result:
-                print(f"  [FAIL] {test_name}")
-    else:
-        print("\n[SUCCESS] PHASE 6 COMPLETE - ALL 8 TESTS PASSED!")
-        print("\nVisualization Functions Implemented:")
-        print("  [OK] plot_price_with_indicators() - Candlestick with indicators")
-        print("  [OK] plot_signals() - Trading signals with markers")
-        print("  [OK] plot_equity_curve() - Portfolio value over time")
-        print("  [OK] plot_drawdown() - Drawdown analysis")
-        print("  [OK] plot_returns_distribution() - Histogram of returns")
-        print("  [OK] plot_monthly_returns() - Calendar heatmap")
-        print("  [OK] create_backtest_report() - Master function for all charts")
-        print("\nTotal: 7 functions, 8 tests, ALL PASSING!")
-        print("plotting.py is production-ready for Streamlit dashboard!")
-    
-    return passed == len(tests)
-
-
-if __name__ == "__main__":
-    success = run_all_tests()
-    sys.exit(0 if success else 1)
