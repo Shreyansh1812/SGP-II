@@ -634,10 +634,16 @@ def execute_trades(
     equity_curve = pd.Series(index=data.index, dtype=float)
     daily_positions = pd.Series(index=data.index, dtype=str)
     
+    # Pre-extract arrays for faster lookup in the loop (avoids expensive .loc/.iloc calls)
+    # See .jules/bolt.md for learnings on this optimization
+    sig_vals = signals.values
+    open_vals = data['Open'].values
+    close_vals = data['Close'].values
+
     # Iterate through each day using itertuples for performance (2-3x faster than iterrows)
     for i, row in enumerate(data.itertuples()):
         date = row.Index
-        signal = signals.loc[date]
+        signal = sig_vals[i]
         
         # Skip if signal is NaN (insufficient indicator data)
         if pd.isna(signal):
@@ -649,8 +655,7 @@ def execute_trades(
             # Enter LONG position (BUY) at next day's open
             if i + 1 < len(data) and cash > 0:
                 next_date = data.index[i + 1]
-                next_row = data.iloc[i + 1]
-                execution_price = next_row['Open']
+                execution_price = open_vals[i + 1]
                 
                 shares = int(cash // execution_price)  # Floor division for whole shares
                 if shares > 0:
@@ -665,8 +670,7 @@ def execute_trades(
             # Exit LONG position (SELL) at next day's open
             if i + 1 < len(data):
                 next_date = data.index[i + 1]
-                next_row = data.iloc[i + 1]
-                execution_price = next_row['Open']
+                execution_price = open_vals[i + 1]
                 
                 proceeds = shares * execution_price
                 cash += proceeds
@@ -698,15 +702,16 @@ def execute_trades(
                 entry_price = None
         
         # Calculate current equity using CURRENT close price
-        current_price = row.Close
+        current_price = close_vals[i]
         if position == 'FLAT':
             equity = cash
         else:  # LONG
             holdings_value = shares * current_price
             equity = cash + holdings_value
         
-        equity_curve.loc[date] = equity
-        daily_positions.loc[date] = position
+        # Directly update the underlying numpy array avoiding pandas indexing overhead
+        equity_curve.values[i] = equity
+        daily_positions.values[i] = position
     
     # Handle open position at end of backtest
     if position == 'LONG':

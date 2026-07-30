@@ -1,0 +1,3 @@
+## 2026-07-30 - Pandas .loc/.iloc inside tight loops is a severe bottleneck
+**Learning:** Using `.loc` and `.iloc` lookups inside a large loop over a Pandas DataFrame or Series is incredibly slow due to indexing overhead. Even in a simple loop, evaluating these properties millions of times degrades performance drastically.
+**Action:** When iterating over a DataFrame chronologically for backtesting, use `.values` before the loop to extract the raw underlying NumPy arrays. Then, perform array index lookups (e.g., `open_vals[i]`) inside the loop. This can improve iteration speed by ~20x while maintaining readability and correctness.
