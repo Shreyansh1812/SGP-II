@@ -630,14 +630,20 @@ def execute_trades(
     entry_date = None
     entry_price = None
     
-    # Daily tracking
-    equity_curve = pd.Series(index=data.index, dtype=float)
-    daily_positions = pd.Series(index=data.index, dtype=str)
+    # Pre-allocate lists/arrays for O(1) assignment and fast lookups
+    n = len(data)
+    dates = data.index
+    signals_arr = signals.values
+    close_prices = data['Close'].values
+    open_prices = data['Open'].values
     
-    # Iterate through each day using itertuples for performance (2-3x faster than iterrows)
-    for i, row in enumerate(data.itertuples()):
-        date = row.Index
-        signal = signals.loc[date]
+    equity_list = [0.0] * n
+    positions_list = [''] * n
+
+    # Iterate through each day using array indexing for maximum performance
+    for i in range(n):
+        date = dates[i]
+        signal = signals_arr[i]
         
         # Skip if signal is NaN (insufficient indicator data)
         if pd.isna(signal):
@@ -647,10 +653,9 @@ def execute_trades(
         # REALISTIC EXECUTION: Signal on day[i] → Execute at Open on day[i+1]
         if position == 'FLAT' and signal == 1:
             # Enter LONG position (BUY) at next day's open
-            if i + 1 < len(data) and cash > 0:
-                next_date = data.index[i + 1]
-                next_row = data.iloc[i + 1]
-                execution_price = next_row['Open']
+            if i + 1 < n and cash > 0:
+                next_date = dates[i + 1]
+                execution_price = open_prices[i + 1]
                 
                 shares = int(cash // execution_price)  # Floor division for whole shares
                 if shares > 0:
@@ -663,10 +668,9 @@ def execute_trades(
         
         elif position == 'LONG' and signal == -1:
             # Exit LONG position (SELL) at next day's open
-            if i + 1 < len(data):
-                next_date = data.index[i + 1]
-                next_row = data.iloc[i + 1]
-                execution_price = next_row['Open']
+            if i + 1 < n:
+                next_date = dates[i + 1]
+                execution_price = open_prices[i + 1]
                 
                 proceeds = shares * execution_price
                 cash += proceeds
@@ -698,15 +702,19 @@ def execute_trades(
                 entry_price = None
         
         # Calculate current equity using CURRENT close price
-        current_price = row.Close
+        current_price = close_prices[i]
         if position == 'FLAT':
             equity = cash
         else:  # LONG
             holdings_value = shares * current_price
             equity = cash + holdings_value
         
-        equity_curve.loc[date] = equity
-        daily_positions.loc[date] = position
+        equity_list[i] = equity
+        positions_list[i] = position
+
+    # Reconstruct pandas Series after the loop
+    equity_curve = pd.Series(equity_list, index=dates)
+    daily_positions = pd.Series(positions_list, index=dates)
     
     # Handle open position at end of backtest
     if position == 'LONG':
