@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS company_fundamentals (
     operating_margin REAL,
     roe REAL,
     is_healthy INTEGER DEFAULT 1, -- 1 for True, 0 for False (standard SQLite boolean)
+    cautionary_remark TEXT, -- Explanatory remark when high debt is qualified by strong future demand
     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

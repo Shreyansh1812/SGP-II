@@ -31,6 +31,7 @@ class FundamentalsDAO(BaseDAO):
         operating_margin: Optional[float],
         roe: Optional[float],
         is_healthy: int,
+        cautionary_remark: Optional[str] = None,
         session: Optional[Session] = None
     ) -> None:
         """
@@ -50,20 +51,25 @@ class FundamentalsDAO(BaseDAO):
             Return on Equity
         is_healthy : int
             Health status mask (1 for Healthy, 0 for Unhealthy)
+        cautionary_remark : Optional[str]
+            Optional cautionary note when high debt is qualified by strong future demand.
         session : Optional[Session]
             Optional SQLAlchemy Session. If omitted, uses default session context.
         """
         query = text("""
             INSERT INTO company_fundamentals (
-                ticker, pe_ratio, debt_to_equity, operating_margin, roe, is_healthy, last_updated
+                ticker, pe_ratio, debt_to_equity, operating_margin, roe, is_healthy,
+                cautionary_remark, last_updated
             ) VALUES (
-                :ticker, :pe_ratio, :debt_to_equity, :operating_margin, :roe, :is_healthy, CURRENT_TIMESTAMP
+                :ticker, :pe_ratio, :debt_to_equity, :operating_margin, :roe, :is_healthy,
+                :cautionary_remark, CURRENT_TIMESTAMP
             ) ON CONFLICT(ticker) DO UPDATE SET
                 pe_ratio = excluded.pe_ratio,
                 debt_to_equity = excluded.debt_to_equity,
                 operating_margin = excluded.operating_margin,
                 roe = excluded.roe,
                 is_healthy = excluded.is_healthy,
+                cautionary_remark = excluded.cautionary_remark,
                 last_updated = CURRENT_TIMESTAMP;
         """)
         params = {
@@ -73,6 +79,7 @@ class FundamentalsDAO(BaseDAO):
             "operating_margin": operating_margin,
             "roe": roe,
             "is_healthy": int(is_healthy),
+            "cautionary_remark": cautionary_remark,
         }
 
         def _execute(s: Session):
@@ -113,7 +120,8 @@ class FundamentalsDAO(BaseDAO):
     def get_fundamental(self, ticker: str, session: Optional[Session] = None) -> Optional[Dict[str, Any]]:
         """Retrieves single fundamental record by ticker."""
         query = text("""
-            SELECT ticker, pe_ratio, debt_to_equity, operating_margin, roe, is_healthy, last_updated
+            SELECT ticker, pe_ratio, debt_to_equity, operating_margin, roe, is_healthy,
+                   cautionary_remark, last_updated
             FROM company_fundamentals WHERE ticker = :ticker;
         """)
 

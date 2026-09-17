@@ -1489,8 +1489,7 @@ def plot_monthly_returns(
             ],
             zmid=0,  # Center colorscale at zero
             colorbar=dict(
-                title="Return (%)",
-                titleside="right"
+                title=dict(text="Return (%)", side="right")
             ),
             hovertemplate='%{y} %{x}<br>Return: %{z:.2f}%<extra></extra>'
         )
