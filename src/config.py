@@ -101,11 +101,11 @@ class Settings(BaseSettings):
         description="Primary LLM provider for sentiment analysis."
     )
     GEMINI_MODEL: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3.6-flash",
         description="Gemini model identifier."
     )
     GROQ_MODEL: str = Field(
-        default="llama-3.1-8b-instant",
+        default="openai/gpt-oss-120b",
         description="Groq model identifier."
     )
 

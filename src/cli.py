@@ -9,12 +9,16 @@ headless execution, cron scheduling, and CI/CD integration.
 
 Commands
 --------
-- ``init-db``           — Initialize database schema
-- ``run-screener``      — Execute weekly fundamental screening
-- ``run-sentiment``     — Run daily LLM sentiment analysis
-- ``train-model``       — Train ML model on historical data
-- ``run-daily-signals`` — Generate daily trading signals
-- ``run-pipeline``      — Execute full end-to-end daily pipeline
+- ``init-db``                   — Initialize database schema
+- ``run-screener``              — Execute weekly fundamental screening
+- ``run-sentiment``             — Run daily LLM sentiment analysis
+- ``train-model``               — Train ML model on historical data
+- ``train-model-benchmark``     — Train ML model with holdout test & benchmark report
+- ``run-daily-signals``         — Generate daily trading signals
+- ``run-pipeline``              — Execute full end-to-end daily pipeline
+- ``portfolio-summary``         — Display paper trading positions & live P&L
+- ``evaluate-recommendations``   — Realized return tracking of audit recommendations
+- ``compare-models``            — Side-by-side benchmark comparison of model versions
 
 Usage
 -----
@@ -24,8 +28,12 @@ Usage
     python -m src.cli run-screener
     python -m src.cli run-sentiment --date 2026-08-30
     python -m src.cli train-model --ticker AAPL --years 6
+    python -m src.cli train-model-benchmark --ticker AAPL --years 6
     python -m src.cli run-daily-signals --date 2026-08-30
     python -m src.cli run-pipeline --date 2026-08-30
+    python -m src.cli portfolio-summary
+    python -m src.cli evaluate-recommendations --limit 50
+    python -m src.cli compare-models --limit 5
 
 Author: Shreyansh Patel
 Project: SGP-II — AI-Augmented Decision-Support Sandbox
@@ -307,6 +315,243 @@ def cmd_run_pipeline(args) -> None:
 
 
 # ==============================================================================
+# COMMAND: seed-db
+# ==============================================================================
+
+def cmd_seed_db(args) -> None:
+    """Seed database with historical sentiment and recommendation records."""
+    from src.database.seeder import DatabaseSeeder
+
+    days = getattr(args, "days", 30) or 30
+    print(f"\n🌱 Seeding database with {days} days of historical demo records...")
+
+    seeder = DatabaseSeeder()
+    summary = seeder.seed_database(days=days)
+
+    print("\n" + "=" * 60)
+    print("SGP-II DATABASE SEEDING SUMMARY")
+    print("=" * 60)
+    print(f"  Days Seeded          : {summary['days']}")
+    print(f"  Date Range           : {summary['date_range'][0]} to {summary['date_range'][1]}")
+    print(f"  Tickers Processed    : {summary['tickers_seeded']}")
+    print(f"  Sentiment Records    : {summary['sentiment_records']}")
+    print(f"  Total Recommendations: {summary['recommendation_records']}")
+    print(f"  BUY Signals          : {summary['buy_signals']}")
+    print(f"  HOLD Signals         : {summary['hold_signals']}")
+    print("=" * 60 + "\n")
+
+
+# ==============================================================================
+# COMMAND: train-model-benchmark
+# ==============================================================================
+
+def cmd_train_model_benchmark(args) -> None:
+    """Train ML model with proper train/val/test split and generate benchmark report."""
+    import yfinance as yf
+    import pandas as pd
+    from src.ml.feature_engine import compute_technical_features
+    from src.ml.trainer import MLModelTrainer
+
+    ticker = getattr(args, "ticker", "AAPL") or "AAPL"
+    years = getattr(args, "years", 6) or 6
+    model_name = getattr(args, "model_name", "XGBoost_Signal") or "XGBoost_Signal"
+    save_path = getattr(args, "save_path", None)
+
+    settings = get_settings()
+    model_path = save_path or str(settings.get_model_abs_path())
+
+    logger.info(f"Downloading {years}y of OHLCV data for {ticker}...")
+    df = yf.download(
+        ticker.upper(),
+        period=f"{years}y",
+        interval="1d",
+        progress=True,
+        auto_adjust=True,
+    )
+
+    if df is None or df.empty:
+        print(f"❌ No data found for {ticker}. Exiting.")
+        sys.exit(1)
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    print(f"📊 Downloaded {len(df)} bars of data for {ticker}.")
+
+    logger.info("Computing technical features...")
+    feature_df = compute_technical_features(df)
+    print(f"🔧 Feature matrix: {len(feature_df)} samples × {len(feature_df.columns)} columns.")
+
+    logger.info("Training ML model with holdout test benchmark...")
+    trainer = MLModelTrainer()
+    result = trainer.train_with_benchmark(
+        historical_df=feature_df,
+        model_output_path=model_path,
+        model_name=model_name,
+    )
+    test_metrics = result.get("test_metrics", {})
+    report_id = result.get("benchmark_report_id")
+
+    print("\n" + "=" * 60)
+    print("SGP-II MODEL BENCHMARK TRAINING REPORT")
+    print("=" * 60)
+    print(f"  Model Name          : {result.get('model_name')}")
+    print(f"  Model Version       : {result.get('model_version')}")
+    print(f"  Saved Path          : {result.get('model_path')}")
+    print(f"  Database Report ID  : {report_id or 'N/A'}")
+    print(f"  Training Time       : {result.get('training_time_seconds', 0):.2f}s")
+    print(f"  Dataset Period      : {result.get('dataset_period')}")
+    print("  --- Predictive Metrics (Held-Out Test Set) ---")
+    print(f"  ROC-AUC             : {test_metrics.get('roc_auc', 0):.4f}")
+    print(f"  F1 Score            : {test_metrics.get('f1_score', 0):.4f}")
+    print(f"  Precision           : {test_metrics.get('precision', 0):.4f}")
+    print(f"  Recall              : {test_metrics.get('recall', 0):.4f}")
+    print(f"  Accuracy            : {test_metrics.get('accuracy', 0):.4f}")
+    print(f"  Directional Accuracy: {test_metrics.get('directional_accuracy', 0):.4f}")
+    print("  --- Financial Backtest Metrics ---")
+    print(f"  Backtested Return   : {test_metrics.get('backtested_return', 0) * 100:.2f}%")
+    print(f"  Sharpe Ratio        : {test_metrics.get('sharpe_ratio', 0):.4f}")
+    print(f"  Max Drawdown        : {test_metrics.get('max_drawdown', 0) * 100:.2f}%")
+    print(f"  Win Rate            : {test_metrics.get('win_rate', 0) * 100:.2f}%")
+    print(f"  Total Trades        : {test_metrics.get('total_trades', 0)}")
+    print("=" * 60 + "\n")
+
+
+# ==============================================================================
+# COMMAND: evaluate-recommendations
+# ==============================================================================
+
+def cmd_evaluate_recommendations(args) -> None:
+    """Evaluate realized performance of past recommendations in audit trail."""
+    from src.database.connection import init_db
+    from src.portfolio.performance_tracker import PerformanceTracker
+
+    init_db()
+    limit = getattr(args, "limit", 100) or 100
+
+    print(f"\n🎯 Evaluating up to {limit} recent recommendations from audit trail...")
+    tracker = PerformanceTracker()
+    summary = tracker.evaluate_all_recommendations(limit=limit)
+
+    agg = summary.get("aggregate_stats") or {}
+    print("\n" + "=" * 60)
+    print("SGP-II RECOMMENDATION EVALUATION SUMMARY")
+    print("=" * 60)
+    print(f"  Evaluated Positions : {summary.get('total_evaluated', 0)}")
+    print(f"  Evaluation Failures : {summary.get('total_failed', 0)}")
+    print("  --- Realized Return Performance ---")
+    print(f"  Average Return 1D   : {(agg.get('avg_return_1d') or 0.0) * 100:.2f}%")
+    print(f"  Average Return 1W   : {(agg.get('avg_return_1w') or 0.0) * 100:.2f}%")
+    print(f"  Average Return 1M   : {(agg.get('avg_return_1m') or 0.0) * 100:.2f}%")
+    print(f"  Average Return 3M   : {(agg.get('avg_return_3m') or 0.0) * 100:.2f}%")
+    print(f"  Win Rate (1W)       : {(agg.get('win_rate_1w') or 0.0) * 100:.2f}%")
+    print(f"  Win Rate (1M)       : {(agg.get('win_rate_1m') or 0.0) * 100:.2f}%")
+    print("=" * 60 + "\n")
+
+
+# ==============================================================================
+# COMMAND: portfolio-summary
+# ==============================================================================
+
+def cmd_portfolio_summary(args) -> None:
+    """Display current paper trading portfolio positions and live P&L."""
+    from src.database.connection import init_db
+    from src.portfolio.portfolio_manager import PortfolioManager
+
+    init_db()
+    pm = PortfolioManager()
+    portfolio = pm.get_portfolio_with_live_prices()
+
+    positions = portfolio.get("positions", [])
+
+    print("\n" + "=" * 60)
+    print("SGP-II PAPER TRADING PORTFOLIO SUMMARY")
+    print("=" * 60)
+    print(f"  Total Invested      : ${portfolio.get('total_invested', 0):,.2f}")
+    print(f"  Current Value       : ${portfolio.get('current_value', 0):,.2f}")
+    print(f"  Total P&L ($)       : ${portfolio.get('total_pnl', 0):+,.2f}")
+    print(f"  Total Return (%)    : {portfolio.get('total_return_pct', 0):+.2f}%")
+    print(f"  Open Positions Count: {portfolio.get('position_count', 0)}")
+    print("=" * 60)
+
+    if positions:
+        print("\nOpen Positions:")
+        fmt = "{:<8} {:>8} {:>12} {:>12} {:>12} {:>10} {:>8}"
+        print(fmt.format("Ticker", "Shares", "Buy Price", "Cur Price", "P&L ($)", "Return", "Score"))
+        print("-" * 75)
+        for p in positions:
+            cur_p = f"${p.get('current_price', 0):.2f}" if p.get('current_price') else "N/A"
+            pnl_s = f"${p.get('pnl', 0):+,.2f}" if p.get('pnl') is not None else "N/A"
+            ret_s = f"{p.get('pnl_pct', 0):+.2f}%" if p.get('pnl_pct') is not None else "N/A"
+            score_s = f"{p.get('recommendation_score') or 'N/A'}"
+            print(fmt.format(
+                p.get("ticker", ""),
+                f"{p.get('quantity', 0):.1f}",
+                f"${p.get('purchase_price', 0):.2f}",
+                cur_p,
+                pnl_s,
+                ret_s,
+                str(score_s),
+            ))
+        print("-" * 75 + "\n")
+    else:
+        print("\nNo open positions in portfolio. Add positions in UI (pages/6_💼_Portfolio.py).\n")
+
+
+# ==============================================================================
+# COMMAND: compare-models
+# ==============================================================================
+
+def cmd_compare_models(args) -> None:
+    """Display comparison table of historical model benchmark reports."""
+    from src.database.connection import init_db
+    from src.database.dao import BenchmarkDAO
+
+    init_db()
+    limit = getattr(args, "limit", 5) or 5
+    model_name = getattr(args, "model_name", None)
+
+    dao = BenchmarkDAO()
+    if model_name:
+        reports = dao.get_reports_by_model(model_name=model_name)[:limit]
+    else:
+        reports = dao.get_latest_reports(limit=limit)
+
+    print("\n" + "=" * 85)
+    print("SGP-II MODEL BENCHMARK COMPARISON TABLE")
+    print("=" * 85)
+
+    if not reports:
+        print("  No benchmark reports found in database.")
+        print("  Train a benchmarked model using: python -m src.cli train-model-benchmark")
+        print("=" * 85 + "\n")
+        return
+
+    fmt = "{:<16} {:<18} {:>8} {:>8} {:>9} {:>9} {:>8} {:>9}"
+    print(fmt.format("Model", "Version", "ROC-AUC", "F1", "Dir Acc", "Return", "Sharpe", "Max DD"))
+    print("-" * 92)
+    for r in reports:
+        ret_s = f"{r.get('backtested_return', 0) * 100:.1f}%" if r.get('backtested_return') is not None else "N/A"
+        dd_s = f"{r.get('max_drawdown', 0) * 100:.1f}%" if r.get('max_drawdown') is not None else "N/A"
+        auc_s = f"{r.get('roc_auc', 0):.3f}" if r.get('roc_auc') is not None else "N/A"
+        f1_s = f"{r.get('f1_score', 0):.3f}" if r.get('f1_score') is not None else "N/A"
+        dir_s = f"{r.get('directional_accuracy', 0):.3f}" if r.get('directional_accuracy') is not None else "N/A"
+        sharpe_s = f"{r.get('sharpe_ratio', 0):.2f}" if r.get('sharpe_ratio') is not None else "N/A"
+
+        print(fmt.format(
+            str(r.get("model_name", ""))[:15],
+            str(r.get("model_version", ""))[:17],
+            auc_s,
+            f1_s,
+            dir_s,
+            ret_s,
+            sharpe_s,
+            dd_s,
+        ))
+    print("-" * 92 + "\n")
+
+
+# ==============================================================================
 # MAIN CLI PARSER
 # ==============================================================================
 
@@ -319,10 +564,15 @@ def main():
 Examples:
   python -m src.cli init-db
   python -m src.cli run-screener
+  python -m src.cli seed-db --days 30
   python -m src.cli run-sentiment --date 2026-08-30
   python -m src.cli train-model --ticker AAPL --years 6
+  python -m src.cli train-model-benchmark --ticker AAPL --years 6
   python -m src.cli run-daily-signals --date 2026-08-30
   python -m src.cli run-pipeline --date 2026-08-30
+  python -m src.cli portfolio-summary
+  python -m src.cli evaluate-recommendations --limit 50
+  python -m src.cli compare-models --limit 5
         """,
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -330,6 +580,11 @@ Examples:
     # init-db
     sub_init = subparsers.add_parser("init-db", help="Initialize database schema")
     sub_init.set_defaults(func=cmd_init_db)
+
+    # seed-db
+    sub_seed = subparsers.add_parser("seed-db", help="Seed database with historical sentiment and recommendations")
+    sub_seed.add_argument("--days", type=int, default=30, help="Number of historical business days (default: 30)")
+    sub_seed.set_defaults(func=cmd_seed_db)
 
     # run-screener
     sub_screener = subparsers.add_parser("run-screener", help="Run weekly fundamental screener")
@@ -352,6 +607,17 @@ Examples:
     )
     sub_train.set_defaults(func=cmd_train_model)
 
+    # train-model-benchmark
+    sub_benchmark = subparsers.add_parser(
+        "train-model-benchmark",
+        help="Train ML model with train/val/test split and generate benchmark report",
+    )
+    sub_benchmark.add_argument("--ticker", type=str, default="AAPL", help="Training ticker (default: AAPL)")
+    sub_benchmark.add_argument("--years", type=int, default=6, help="Years of history (default: 6)")
+    sub_benchmark.add_argument("--model-name", type=str, default="XGBoost_Signal", help="Report model name")
+    sub_benchmark.add_argument("--save-path", type=str, default=None, help="Custom output model path")
+    sub_benchmark.set_defaults(func=cmd_train_model_benchmark)
+
     # run-daily-signals
     sub_signals = subparsers.add_parser("run-daily-signals", help="Generate daily signals")
     sub_signals.add_argument("--date", type=str, default=None, help="Target date (YYYY-MM-DD)")
@@ -361,6 +627,30 @@ Examples:
     sub_pipeline = subparsers.add_parser("run-pipeline", help="Run full E2E pipeline")
     sub_pipeline.add_argument("--date", type=str, default=None, help="Target date (YYYY-MM-DD)")
     sub_pipeline.set_defaults(func=cmd_run_pipeline)
+
+    # portfolio-summary
+    sub_port = subparsers.add_parser(
+        "portfolio-summary",
+        help="Display paper trading portfolio positions and current P&L",
+    )
+    sub_port.set_defaults(func=cmd_portfolio_summary)
+
+    # evaluate-recommendations
+    sub_eval = subparsers.add_parser(
+        "evaluate-recommendations",
+        help="Evaluate realized performance of past recommendations from audit trail",
+    )
+    sub_eval.add_argument("--limit", type=int, default=100, help="Max audit records to evaluate (default: 100)")
+    sub_eval.set_defaults(func=cmd_evaluate_recommendations)
+
+    # compare-models
+    sub_cmp = subparsers.add_parser(
+        "compare-models",
+        help="Display comparison table of historical model benchmark reports",
+    )
+    sub_cmp.add_argument("--limit", type=int, default=5, help="Number of benchmark reports to compare (default: 5)")
+    sub_cmp.add_argument("--model-name", type=str, default=None, help="Filter by model name")
+    sub_cmp.set_defaults(func=cmd_compare_models)
 
     args = parser.parse_args()
 

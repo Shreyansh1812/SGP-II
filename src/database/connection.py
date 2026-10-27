@@ -132,6 +132,40 @@ def init_db(db_url: Optional[str] = None, schema_path: Optional[Path] = None) ->
             for stmt in statements:
                 conn.execute(text(stmt))
 
+        # Ensure daily_sentiment has 'ticker' column (migration for existing DBs)
+        try:
+            inspector_query = text("PRAGMA table_info(daily_sentiment);") if db_manager.is_sqlite else text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='daily_sentiment';"
+            )
+            result = conn.execute(inspector_query).fetchall()
+            col_names = [r[1] if db_manager.is_sqlite else r[0] for r in result]
+            if col_names and "ticker" not in col_names:
+                logger.info("Migrating daily_sentiment table to include 'ticker' column...")
+                if db_manager.is_sqlite:
+                    migration_sql = """
+                    CREATE TABLE IF NOT EXISTS daily_sentiment_migrated (
+                        date TEXT NOT NULL,
+                        ticker TEXT NOT NULL DEFAULT 'MACRO',
+                        sentiment_score REAL NOT NULL CHECK (sentiment_score >= -1.0 AND sentiment_score <= 1.0),
+                        sentiment_label TEXT NOT NULL CHECK (sentiment_label IN ('bullish', 'bearish', 'neutral')),
+                        summary TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (date, ticker)
+                    );
+                    INSERT OR IGNORE INTO daily_sentiment_migrated (date, ticker, sentiment_score, sentiment_label, summary, created_at)
+                    SELECT date, 'MACRO', sentiment_score, sentiment_label, summary, created_at FROM daily_sentiment;
+                    DROP TABLE daily_sentiment;
+                    ALTER TABLE daily_sentiment_migrated RENAME TO daily_sentiment;
+                    CREATE INDEX IF NOT EXISTS idx_daily_sentiment_date ON daily_sentiment(date);
+                    """
+                    raw_conn = conn.connection
+                    raw_cursor = raw_conn.cursor()
+                    raw_cursor.executescript(migration_sql)
+                    raw_cursor.close()
+                    logger.info("daily_sentiment table migrated successfully.")
+        except Exception as mig_err:
+            logger.warning(f"Schema migration check encountered non-fatal notice: {mig_err}")
+
     logger.info("Database schema initialized successfully.")
 
 

@@ -83,6 +83,17 @@ class TestFundamentalsDAO:
         assert updated["is_healthy"] == 0
         assert updated["pe_ratio"] == 75.0
 
+    def test_get_all_fundamentals(self):
+        dao = FundamentalsDAO(db_url=TEST_DB_URL)
+        dao.upsert_fundamental("MSFT", 30.0, 0.5, 0.40, 0.30, 1)
+        dao.upsert_fundamental("AAPL", 25.0, 1.0, 0.30, 1.20, 1)
+        dao.upsert_fundamental("BADCO", 10.0, 5.0, -0.10, -0.20, 0)
+
+        all_records = dao.get_all_fundamentals()
+        assert len(all_records) == 3
+        tickers = [r["ticker"] for r in all_records]
+        assert tickers == ["AAPL", "BADCO", "MSFT"]
+
 
 class TestSentimentDAO:
 
@@ -119,6 +130,17 @@ class TestSentimentDAO:
     def test_nonexistent_sentiment(self):
         dao = SentimentDAO(db_url=TEST_DB_URL)
         assert dao.get_sentiment("1999-01-01") is None
+
+    def test_get_sentiment_history(self):
+        dao = SentimentDAO(db_url=TEST_DB_URL)
+        dao.upsert_sentiment("2026-07-26", 0.10, "neutral", "Sunday calm")
+        dao.upsert_sentiment("2026-07-27", -0.30, "bearish", "Monday drop")
+        dao.upsert_sentiment("2026-07-28", 0.50, "bullish", "Tuesday rally")
+
+        history = dao.get_sentiment_history(limit=2)
+        assert len(history) == 2
+        assert history[0]["date"] == "2026-07-28"
+        assert history[1]["date"] == "2026-07-27"
 
 
 class TestRecommendationsDAO:
@@ -186,3 +208,84 @@ class TestRecommendationsDAO:
         assert latest[0]["signal_type"] == "BUY"
         assert latest[0]["prob_buy"] == 0.78
         assert latest[0]["is_sentiment_passed"] == 1
+
+    def test_get_recommendations_by_date_and_available_dates(self):
+        dao = RecommendationsDAO(db_url=TEST_DB_URL)
+
+        rec1 = {
+            "date": "2026-07-28",
+            "ticker": "AAPL",
+            "signal_type": "HOLD",
+            "prob_buy": 0.55,
+            "prob_sell": 0.0,
+            "prob_hold": 0.45,
+            "sentiment_score": 0.35,
+            "is_sentiment_passed": 1,
+            "execution_price": 220.00,
+            "rationale": "HOLD rationale"
+        }
+        rec2 = {
+            "date": "2026-07-28",
+            "ticker": "NVDA",
+            "signal_type": "BUY",
+            "prob_buy": 0.85,
+            "prob_sell": 0.0,
+            "prob_hold": 0.15,
+            "sentiment_score": 0.35,
+            "is_sentiment_passed": 1,
+            "execution_price": 125.00,
+            "rationale": "BUY rationale"
+        }
+        rec3 = {
+            "date": "2026-07-27",
+            "ticker": "MSFT",
+            "signal_type": "HOLD",
+            "prob_buy": 0.40,
+            "prob_sell": 0.0,
+            "prob_hold": 0.60,
+            "sentiment_score": -0.10,
+            "is_sentiment_passed": 0,
+            "execution_price": 440.00,
+            "rationale": "HOLD rationale"
+        }
+
+        dao.insert_recommendation(rec1)
+        dao.insert_recommendation(rec2)
+        dao.insert_recommendation(rec3)
+
+        # Test get_recommendations_by_date (ordered by prob_buy DESC)
+        recs_today = dao.get_recommendations_by_date("2026-07-28")
+        assert len(recs_today) == 2
+        assert recs_today[0]["ticker"] == "NVDA"
+        assert recs_today[0]["prob_buy"] == 0.85
+        assert recs_today[1]["ticker"] == "AAPL"
+
+        # Test get_available_dates
+        dates = dao.get_available_dates(limit=10)
+        assert dates == ["2026-07-28", "2026-07-27"]
+
+    def test_get_recommendations_by_ticker(self):
+        dao = RecommendationsDAO(db_url=TEST_DB_URL)
+
+        rec1 = {
+            "date": "2026-07-27",
+            "ticker": "AAPL",
+            "signal_type": "HOLD",
+            "prob_buy": 0.50,
+            "execution_price": 218.00,
+        }
+        rec2 = {
+            "date": "2026-07-28",
+            "ticker": "AAPL",
+            "signal_type": "BUY",
+            "prob_buy": 0.72,
+            "execution_price": 222.00,
+        }
+
+        dao.insert_recommendation(rec1)
+        dao.insert_recommendation(rec2)
+
+        aapl_history = dao.get_recommendations_by_ticker("AAPL", limit=10)
+        assert len(aapl_history) == 2
+        assert aapl_history[0]["date"] == "2026-07-28"
+        assert aapl_history[1]["date"] == "2026-07-27"

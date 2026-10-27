@@ -15,6 +15,8 @@ Pages
 3. **📰 Sentiment** — LLM-powered sentiment feed and history
 4. **🤖 ML Engine** — Model training, evaluation, and feature importance
 5. **📈 Backtester** — Strategy backtesting with interactive charts
+6. **💼 Portfolio** — Paper trading position management & P&L tracking
+7. **📉 Performance** — Closed-loop recommendation & model performance analytics
 
 Usage
 -----
@@ -67,6 +69,8 @@ def init_session_state():
         "sentiment_result": None,
         "model_trained": False,
         "signals_generated": None,
+        "portfolio_data": None,
+        "benchmark_reports": None,
     }
     for key, default_val in defaults.items():
         if key not in st.session_state:
@@ -86,12 +90,15 @@ fundamentals_page = st.Page("pages/2_🏥_Fundamentals.py", title="Fundamentals"
 sentiment_page = st.Page("pages/3_📰_Sentiment.py", title="Sentiment", icon="📰")
 ml_engine_page = st.Page("pages/4_🤖_ML_Engine.py", title="ML Engine", icon="🤖")
 backtester_page = st.Page("pages/5_📈_Backtester.py", title="Backtester", icon="📈")
+portfolio_page = st.Page("pages/6_💼_Portfolio.py", title="Portfolio", icon="💼")
+performance_page = st.Page("pages/7_📉_Performance.py", title="Performance", icon="📉")
 
 # Build navigation
 nav = st.navigation(
     {
         "Decision Support": [dashboard_page, fundamentals_page, sentiment_page],
         "Engine Room": [ml_engine_page, backtester_page],
+        "Portfolio & Performance": [portfolio_page, performance_page],
     }
 )
 

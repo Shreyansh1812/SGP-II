@@ -2,48 +2,26 @@
 src/ml/feature_engine.py
 =========================
 
-Zero-Lookahead Technical Feature Engineering Pipeline.
+Quantitative Feature Engineering Engine for SGP-II.
 
-Computes 14+ quantitative technical features from raw OHLCV data for use in
-the SGP-II ML signal generator. All features are strictly lagged by one bar
-(``shift(1)``) relative to the target variable to mathematically eliminate
-lookahead bias.
+Computes stationary, normalized technical and market features from daily OHLCV
+data for use in the SGP-II ML stock selection engine.
 
-Feature Set
------------
-Momentum:
-    - RSI (14-period Relative Strength Index)
-    - MACD Line, Signal, and Histogram (12, 26, 9)
+Key Principles:
+1. Stationarity: All features are scaled as returns, ratios, bounded oscillators,
+   or z-scores. No non-stationary raw price levels.
+2. Zero Lookahead: Features for date t use information strictly up to and including
+   Close_t.
+3. Cross-Sectional Normalization: Features can be cross-sectionally ranked
+   across the equity universe per date, eliminating macro market regime distortions.
+4. Backwards Compatibility: Preserves compute_technical_features() for legacy modules.
 
-Trend:
-    - Bollinger Band %B and Bandwidth (20-period, 2σ)
-    - Moving Average Ratios: Close/SMA20, Close/SMA50, SMA50/SMA200
-    - ADX (14-period Average Directional Index)
-
-Volatility:
-    - ATR (14-period) normalized by Close price
-    - 20-day annualized volatility (rolling std of returns × √252)
-
-Volume:
-    - On-Balance Volume (OBV) — 20-period Z-score normalized
-    - Volume / SMA(Volume, 20) ratio
-
-Target:
-    - ``Target_Buy`` = 1 if 5-day forward return > +2.0%, else 0
-
-Zero-Lookahead Guarantee
-------------------------
-All features at index *t* are derived from data up to *t−1* via
-``features.shift(1)``. The target at index *t* uses the forward return
-from *t* to *t+5*. This ensures no future information leaks into
-the feature matrix.
-
-Author: Shreyansh Patel
+Author: Shreyansh Patel & Quantitative Engineering Team
 Project: SGP-II — AI-Augmented Decision-Support Sandbox
 """
 
 import logging
-from typing import Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -59,33 +37,11 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# HELPER INDICATORS (not available in src/indicators.py)
+# HELPER INDICATORS
 # ==============================================================================
 
 def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """
-    Calculate Average True Range (ATR) using Wilder's smoothing.
-
-    ATR measures market volatility by decomposing the entire range of a
-    security's price for that period.
-
-    Formula (True Range per bar)::
-
-        TR = max(High - Low, |High - Close_prev|, |Low - Close_prev|)
-        ATR = EWM(TR, alpha=1/period)
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        OHLCV DataFrame with 'High', 'Low', 'Close' columns.
-    period : int
-        Smoothing period (default 14).
-
-    Returns
-    -------
-    pd.Series
-        ATR values with NaN for warm-up period.
-    """
+    """Calculate Average True Range (ATR) using Wilder's smoothing."""
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -93,95 +49,39 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = ranges.max(axis=1)
 
-    # Wilder's exponential smoothing
     atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     return atr
 
 
 def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """
-    Calculate Average Directional Index (ADX) for trend strength measurement.
-
-    ADX quantifies trend strength regardless of direction. Values above 25
-    indicate a strong trend; below 20 indicate a weak or absent trend.
-
-    Formula::
-
-        +DM = High_t - High_{t-1}   (if positive and > -DM, else 0)
-        -DM = Low_{t-1} - Low_t     (if positive and > +DM, else 0)
-        +DI = 100 × EWM(+DM) / ATR
-        -DI = 100 × EWM(-DM) / ATR
-        DX  = 100 × |+DI - -DI| / (+DI + -DI)
-        ADX = EWM(DX, period)
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        OHLCV DataFrame with 'High', 'Low', 'Close' columns.
-    period : int
-        Smoothing period (default 14).
-
-    Returns
-    -------
-    pd.Series
-        ADX values (0–100 scale). NaN during warm-up period.
-    """
+    """Calculate Average Directional Index (ADX) for trend strength measurement."""
     high = df['High']
     low = df['Low']
 
-    # Directional Movement
     plus_dm = high.diff()
     minus_dm = -low.diff()
 
-    # Apply DM rules: only keep if positive and greater than the other
     plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
     minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
 
-    # Wilder's smoothing for DM and ATR
     atr = compute_atr(df, period)
 
-    # Smoothed directional movement
     smooth_plus_dm = plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     smooth_minus_dm = minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
-    # Directional Indicators
     plus_di = 100.0 * smooth_plus_dm / atr.replace(0, np.nan)
     minus_di = 100.0 * smooth_minus_dm / atr.replace(0, np.nan)
 
-    # Directional Index
     di_sum = plus_di + minus_di
     di_diff = (plus_di - minus_di).abs()
     dx = 100.0 * di_diff / di_sum.replace(0, np.nan)
 
-    # ADX = smoothed DX
     adx = dx.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-
     return adx
 
 
 def compute_obv(df: pd.DataFrame) -> pd.Series:
-    """
-    Calculate On-Balance Volume (OBV).
-
-    OBV is a cumulative volume indicator that relates volume to price change.
-    Rising OBV confirms an uptrend; falling OBV confirms a downtrend.
-
-    Formula::
-
-        If Close_t > Close_{t-1}: OBV_t = OBV_{t-1} + Volume_t
-        If Close_t < Close_{t-1}: OBV_t = OBV_{t-1} - Volume_t
-        If Close_t = Close_{t-1}: OBV_t = OBV_{t-1}
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        OHLCV DataFrame with 'Close' and 'Volume' columns.
-
-    Returns
-    -------
-    pd.Series
-        OBV values (cumulative sum).
-    """
+    """Calculate On-Balance Volume (OBV)."""
     close_diff = df['Close'].diff()
     volume_direction = pd.Series(
         np.where(close_diff > 0, df['Volume'],
@@ -194,56 +94,182 @@ def compute_obv(df: pd.DataFrame) -> pd.Series:
 
 
 # ==============================================================================
-# MAIN FEATURE ENGINEERING FUNCTION
+# EXTENDED STATIONARY FEATURE ENGINE (25 FEATURES)
 # ==============================================================================
 
-def compute_technical_features(df: pd.DataFrame) -> pd.DataFrame:
+def compute_extended_features(
+    df: pd.DataFrame, spy_df: Optional[pd.DataFrame] = None
+) -> pd.DataFrame:
     """
-    Compute technical indicators, lag them by 1 bar to prevent lookahead bias,
-    and generate the binary classification target.
+    Compute ~25 stationary, normalized quantitative features for a single security.
 
-    This function is the sole feature engineering entry point for the SGP-II
-    ML pipeline. It guarantees that features at time *t* use only data
-    available up to *t−1*.
+    Features computed strictly using information available up to and including
+    the current bar (Close_t). Does NOT attach future target variables.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Raw OHLCV DataFrame with columns: Open, High, Low, Close, Volume.
-        Index should be a DatetimeIndex.
+        OHLCV DataFrame with columns: Open, High, Low, Close, Volume.
+    spy_df : Optional[pd.DataFrame]
+        SPY benchmark OHLCV DataFrame for market-relative features.
 
     Returns
     -------
     pd.DataFrame
-        Combined DataFrame containing:
-        - Original OHLCV columns
-        - 14 shifted (lagged) technical feature columns
-        - ``Target_Buy`` binary target column
-        - All NaN rows from warm-up periods dropped
-
-    Raises
-    ------
-    ValueError
-        If any required OHLCV column is missing.
+        DataFrame of technical features indexed identically to df.
     """
     result = df.copy()
+    features = pd.DataFrame(index=result.index)
+    close = result['Close']
+    volume = result['Volume']
 
-    # Validate required columns
+    # --- 1. Momentum & Relative Strength ---
+    features['RSI_7'] = calculate_rsi(result, column='Close', period=7) / 100.0 - 0.5  # centered in [-0.5, 0.5]
+    features['RSI_14'] = calculate_rsi(result, column='Close', period=14) / 100.0 - 0.5
+    features['RSI_28'] = calculate_rsi(result, column='Close', period=28) / 100.0 - 0.5
+
+    macd_line, signal_line, histogram = calculate_macd(
+        result, column='Close', fast_period=12, slow_period=26, signal_period=9
+    )
+    features['MACD_Hist_Norm'] = histogram / close.replace(0, np.nan)
+    features['MACD_Line_Norm'] = macd_line / close.replace(0, np.nan)
+
+    features['Momentum_5d'] = close.pct_change(5)
+    features['Momentum_20d'] = close.pct_change(20)
+    features['Momentum_60d'] = close.pct_change(60)
+
+    # --- 2. Trend & Moving Average Disparities ---
+    sma_20 = calculate_sma(result, column='Close', period=20) if len(result) >= 20 else pd.Series(np.nan, index=result.index)
+    sma_50 = calculate_sma(result, column='Close', period=50) if len(result) >= 50 else pd.Series(np.nan, index=result.index)
+    sma_200 = calculate_sma(result, column='Close', period=200) if len(result) >= 200 else pd.Series(np.nan, index=result.index)
+
+    features['Ratio_Close_SMA20'] = (close / sma_20.replace(0, np.nan)) - 1.0
+    features['Ratio_Close_SMA50'] = (close / sma_50.replace(0, np.nan)) - 1.0
+    features['Ratio_Close_SMA200'] = (close / sma_200.replace(0, np.nan)) - 1.0
+    features['Ratio_SMA50_SMA200'] = (sma_50 / sma_200.replace(0, np.nan)) - 1.0
+
+    # Bollinger Bands
+    upper, middle, lower = calculate_bollinger_bands(
+        result, column='Close', period=20, std_multiplier=2.0
+    )
+    band_width = (upper - lower).replace(0, np.nan)
+    features['BB_PctB'] = (close - lower) / band_width - 0.5  # centered in [-0.5, 0.5]
+    features['BB_Bandwidth'] = band_width / middle.replace(0, np.nan)
+
+    # ADX Trend Strength
+    features['ADX_14'] = compute_adx(result, period=14) / 100.0
+
+    # --- 3. Volatility & Intraday Spreads ---
+    atr = compute_atr(result, period=14)
+    features['ATR_Norm'] = atr / close.replace(0, np.nan)
+
+    vol_10 = close.pct_change().rolling(10).std() * np.sqrt(252)
+    vol_30 = close.pct_change().rolling(30).std() * np.sqrt(252)
+    features['Volatility_10d'] = vol_10
+    features['Volatility_30d'] = vol_30
+    features['Vol_Ratio_10_30'] = (vol_10 / vol_30.replace(0, np.nan)) - 1.0
+
+    features['High_Low_Spread'] = (result['High'] - result['Low']) / close.replace(0, np.nan)
+
+    # --- 4. Volume & Liquidity Dynamics ---
+    vol_sma_20 = volume.rolling(20).mean().replace(0, np.nan)
+    vol_sma_50 = volume.rolling(50).mean().replace(0, np.nan)
+    features['Volume_Ratio_SMA20'] = (volume / vol_sma_20) - 1.0
+    features['Volume_Ratio_SMA50'] = (volume / vol_sma_50) - 1.0
+
+    obv = compute_obv(result)
+    obv_mean = obv.rolling(20).mean()
+    obv_std = obv.rolling(20).std().replace(0, np.nan)
+    features['OBV_Zscore'] = (obv - obv_mean) / obv_std
+
+    # Price-Volume 20-day correlation
+    ret_1d = close.pct_change()
+    vol_chg_1d = volume.pct_change()
+    features['Price_Vol_Corr_20d'] = ret_1d.rolling(20).corr(vol_chg_1d)
+
+    # --- 5. Market-Relative Features (if SPY provided) ---
+    if spy_df is not None and 'Close' in spy_df.columns:
+        spy_close = spy_df['Close'].reindex(result.index)
+        spy_ret_20d = spy_close.pct_change(20)
+        spy_ret_60d = spy_close.pct_change(60)
+
+        features['SPY_Rel_Strength_20d'] = features['Momentum_20d'] - spy_ret_20d
+        features['SPY_Rel_Strength_60d'] = features['Momentum_60d'] - spy_ret_60d
+
+        # Rolling 60-day Beta to SPY
+        spy_ret_1d = spy_close.pct_change()
+        cov = ret_1d.rolling(60).cov(spy_ret_1d)
+        var_spy = spy_ret_1d.rolling(60).var().replace(0, np.nan)
+        features['Rolling_Beta_60d'] = (cov / var_spy) - 1.0  # centered: beta 1.0 -> 0.0
+
+    return features
+
+
+def cross_sectional_rank_normalize(
+    features_by_ticker: Dict[str, pd.DataFrame]
+) -> Dict[str, pd.DataFrame]:
+    """
+    Rank-normalize features across the equity universe on each calendar date.
+
+    Transforms each feature X_{i,t} into a uniform percentile rank score:
+    Z_{i,t} = (Rank(X_{i,t}) - 1) / (K - 1) - 0.5 in [-0.5, +0.5]
+    where K is the number of active tickers on date t.
+
+    Parameters
+    ----------
+    features_by_ticker : Dict[str, pd.DataFrame]
+        Mapping of ticker -> feature DataFrame.
+
+    Returns
+    -------
+    Dict[str, pd.DataFrame]
+        Mapping of ticker -> rank-normalized feature DataFrame.
+    """
+    if not features_by_ticker:
+        return {}
+
+    tickers = list(features_by_ticker.keys())
+    sample_df = next(iter(features_by_ticker.values()))
+    feature_cols = sample_df.columns.tolist()
+
+    # Pre-allocate output dictionaries
+    ranked_by_ticker = {t: pd.DataFrame(index=features_by_ticker[t].index) for t in tickers}
+
+    for col in feature_cols:
+        # Build cross-sectional matrix for this feature: Index=Date, Columns=Ticker
+        col_matrix = pd.DataFrame({
+            t: features_by_ticker[t][col] for t in tickers if col in features_by_ticker[t].columns
+        })
+
+        # Rank across axis 1 (across tickers for each date)
+        # pct=True produces values in (0, 1]
+        ranks = col_matrix.rank(axis=1, pct=True) - 0.5  # centered in [-0.5, +0.5]
+
+        for t in col_matrix.columns:
+            ranked_by_ticker[t][col] = ranks[t]
+
+    return ranked_by_ticker
+
+
+# ==============================================================================
+# LEGACY WRAPPER (FOR BACKWARDS COMPATIBILITY)
+# ==============================================================================
+
+def compute_technical_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute 14 legacy technical indicators with shift(1) lag and Target_Buy.
+    Maintained for complete backwards-compatibility with existing tests and scripts.
+    """
+    result = df.copy()
     required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
     missing = [c for c in required_cols if c not in result.columns]
     if missing:
         raise ValueError(f"Missing required OHLCV column(s): {missing}")
 
-    logger.info(f"Computing technical features for {len(result)} bars...")
-
-    # ------------------------------------------------------------------
-    # Calculate features on CURRENT data (will be shifted later)
-    # ------------------------------------------------------------------
     features = pd.DataFrame(index=result.index)
 
-    # --- Momentum ---
+    # Momentum
     features['RSI_14'] = calculate_rsi(result, column='Close', period=14)
-
     macd_line, signal_line, histogram = calculate_macd(
         result, column='Close', fast_period=12, slow_period=26, signal_period=9
     )
@@ -251,7 +277,7 @@ def compute_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     features['MACD_Signal'] = signal_line
     features['MACD_Hist'] = histogram
 
-    # --- Trend: Bollinger Bands ---
+    # Trend: Bollinger Bands
     upper, middle, lower = calculate_bollinger_bands(
         result, column='Close', period=20, std_multiplier=2.0
     )
@@ -260,11 +286,11 @@ def compute_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     features['BB_PctB'] = (result['Close'] - lower) / band_width
     features['BB_Bandwidth'] = (upper - lower) / middle
 
-    # --- Volatility: ATR normalized by Close ---
+    # Volatility: ATR
     atr = compute_atr(result, period=14)
     features['ATR_Norm'] = atr / result['Close']
 
-    # --- Trend: Moving Average Ratios ---
+    # Trend: Moving Average Ratios
     sma_20 = calculate_sma(result, column='Close', period=20)
     sma_50 = calculate_sma(result, column='Close', period=50)
     sma_200 = calculate_sma(result, column='Close', period=200)
@@ -273,53 +299,32 @@ def compute_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     features['Ratio_Close_SMA50'] = result['Close'] / sma_50.replace(0, np.nan)
     features['Ratio_SMA50_SMA200'] = sma_50 / sma_200.replace(0, np.nan)
 
-    # --- Volatility: 20-day annualized ---
+    # Volatility: 20-day annualized
     features['Volatility_20d'] = (
         result['Close'].pct_change().rolling(20).std() * np.sqrt(252)
     )
 
-    # --- Trend: ADX (14-period) ---
+    # Trend: ADX
     features['ADX_14'] = compute_adx(result, period=14)
 
-    # --- Volume: On-Balance Volume (20-period Z-score normalized) ---
+    # Volume: OBV
     obv = compute_obv(result)
     obv_mean = obv.rolling(20).mean()
     obv_std = obv.rolling(20).std().replace(0, np.nan)
     features['OBV_Zscore'] = (obv - obv_mean) / obv_std
 
-    # --- Volume: Volume / SMA(Volume, 20) ratio ---
+    # Volume: Ratio
     vol_sma_20 = result['Volume'].rolling(20).mean().replace(0, np.nan)
     features['Volume_Ratio_SMA20'] = result['Volume'] / vol_sma_20
 
-    # ------------------------------------------------------------------
-    # SHIFT ALL FEATURES BY 1 to prevent lookahead bias
-    # Features at time t are derived from data up to t-1
-    # ------------------------------------------------------------------
     shifted_features = features.shift(1)
 
-    logger.info(f"Computed {len(shifted_features.columns)} technical features.")
-
-    # ------------------------------------------------------------------
-    # Target Generation: 5-day forward return > +2.0%
-    # ------------------------------------------------------------------
     forward_return_5d = (result['Close'].shift(-5) / result['Close']) - 1.0
     target = (forward_return_5d > 0.02).astype(int)
     target = target.where(forward_return_5d.notna(), np.nan)
 
-    # ------------------------------------------------------------------
-    # Combine and clean
-    # ------------------------------------------------------------------
     final_df = pd.concat([result, shifted_features], axis=1)
     final_df['Target_Buy'] = target
-
-    # Drop all NaN rows from indicator warm-up and shift operations
-    rows_before = len(final_df)
     final_df = final_df.dropna()
-    rows_after = len(final_df)
-
-    logger.info(
-        f"Feature matrix ready: {rows_after} samples "
-        f"(dropped {rows_before - rows_after} warm-up rows)."
-    )
 
     return final_df
