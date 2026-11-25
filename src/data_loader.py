@@ -411,11 +411,11 @@ def clean_data(df: pd.DataFrame, ticker: str = "UNKNOWN") -> pd.DataFrame:
                 )
                 
                 # ffill = forward fill: propagate last valid observation forward
-                df_clean[col] = df_clean[col].fillna(method='ffill')
+                df_clean[col] = df_clean[col].ffill()
                 
                 # If first rows are NaN (no previous value to fill), use backward fill
                 if df_clean[col].isnull().any():
-                    df_clean[col] = df_clean[col].fillna(method='bfill')
+                    df_clean[col] = df_clean[col].bfill()
     
     # =============================================================================
     # STEP 6: Handle Missing Volume Values (Fill with Zero)

@@ -1,64 +1,91 @@
-# Project-specific files
+# =============================================================================
+# SGP-II: Git Ignore Configuration
+# =============================================================================
+
+# Ignore all files and directories by default
+/*
+
+# -----------------------------------------------------------------------------
+# Whitelisted Files (Tracked in Git)
+# -----------------------------------------------------------------------------
+!/.gitignore
+!/README.md
+!/README*
+!/readme.md
+!/implementation_plan.md
+!/Implementation_plan.md
+!/requirements.txt
+!/Requirements.txt
+
+# -----------------------------------------------------------------------------
+# Explicitly Ignored Analysis, Reports & Generated Files
+# -----------------------------------------------------------------------------
+IMPROVEMENTS_SUMMARY.md
+PRODUCTION_IMPROVEMENTS.md
+PRODUCTION_REVIEW.md
+PROJECT_STATUS_REPORT.md
+PROJECT_STATUS_REPORT.pdf
+project_execution_document.md
+repository_analysis.md
+convert_report_to_pdf.py
+temp_report.html
+Technical Indicator.png
 Documentation.pdf
 imp.txt
 test_results.txt
 test_plotting_results.txt
 
-# Environment variables (contains sensitive configuration)
-.env
-.env.local
+# -----------------------------------------------------------------------------
+# Code, Testing & Pipeline Directories (Ignored)
+# -----------------------------------------------------------------------------
+src/
+pages/
+Tests/
+database/
+data/
+models/
+notebooks/
+config.py
+main.py
+generate_sample_data.py
 
-# Python cache and compiled files
+# -----------------------------------------------------------------------------
+# Environment & Sensitive Credentials
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# -----------------------------------------------------------------------------
+# Python, Virtual Environments & Cache
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-
-# Virtual environments
 .venv/
 venv/
 ENV/
 env/
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Data directories (raw/processed stock data)
-data/raw/*.csv
-data/processed/*.csv
-data/test_indicators/*.csv
-
-# Model artifacts
-models/*.pkl
-models/*.h5
-models/*.pt
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-.eggs/
-
-# Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 
-# OS files
+# -----------------------------------------------------------------------------
+# OS & Editor Artifacts
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Logs
 *.log
 logs/
+
+implementation_plan.md
+
